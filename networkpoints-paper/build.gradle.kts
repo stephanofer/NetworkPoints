@@ -8,12 +8,16 @@ dependencies {
     implementation(project(":networkpoints-api"))
 
     compileOnly(libs.paper.api)
+    compileOnly(libs.network.boosters.api)
 
     implementation(libs.craftkit.database)
+    implementation(libs.craftkit.redis)
     implementation(libs.boosted.yaml)
+    implementation(libs.caffeine)
 
     testImplementation(project(":networkpoints-api"))
     testImplementation(libs.paper.api)
+    testImplementation(libs.network.boosters.api)
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
@@ -33,6 +37,7 @@ tasks.shadowJar {
     archiveClassifier.set("")
     duplicatesStrategy = DuplicatesStrategy.INCLUDE
     mergeServiceFiles()
+    append("META-INF/io.netty.versions.properties")
 
     exclude("LICENSE")
     exclude("META-INF/LICENSE")
@@ -43,7 +48,16 @@ tasks.shadowJar {
     relocate("com.hera.craftkit", "com.stephanofer.networkpoints.libs.craftkit")
     relocate("com.zaxxer.hikari", "com.stephanofer.networkpoints.libs.hikari")
     relocate("org.flywaydb", "com.stephanofer.networkpoints.libs.flyway")
+    relocate("tools.jackson", "com.stephanofer.networkpoints.libs.jackson3")
+    relocate("com.fasterxml.jackson", "com.stephanofer.networkpoints.libs.jackson")
     relocate("com.mysql", "com.stephanofer.networkpoints.libs.mysql")
+    relocate("com.google.protobuf", "com.stephanofer.networkpoints.libs.protobuf")
+    relocate("com.github.benmanes.caffeine", "com.stephanofer.networkpoints.libs.caffeine")
+    relocate("io.lettuce", "com.stephanofer.networkpoints.libs.lettuce")
+    relocate("redis.clients.authentication", "com.stephanofer.networkpoints.libs.redisAuthx")
+    relocate("io.netty", "com.stephanofer.networkpoints.libs.netty")
+    relocate("reactor", "com.stephanofer.networkpoints.libs.reactor")
+    relocate("org.reactivestreams", "com.stephanofer.networkpoints.libs.reactiveStreams")
 }
 
 val shadowArchive = tasks.shadowJar.flatMap { it.archiveFile }
@@ -63,6 +77,8 @@ val verifyShadowJar = tasks.register("verifyShadowJar") {
                 "com/stephanofer/networkpoints/libs/hikari/HikariDataSource.class",
                 "com/stephanofer/networkpoints/libs/flyway/core/Flyway.class",
                 "com/stephanofer/networkpoints/libs/mysql/cj/jdbc/Driver.class",
+                "com/stephanofer/networkpoints/libs/caffeine/cache/Caffeine.class",
+                "com/stephanofer/networkpoints/libs/craftkit/redis/RedisClient.class",
                 "db/migration/V1__create_networkpoints.sql"
             )
             check(entries.containsAll(required)) {
@@ -72,19 +88,26 @@ val verifyShadowJar = tasks.register("verifyShadowJar") {
                 "Shadow JAR contains unrelocated BoostedYAML classes"
             }
             val forbidden = listOf(
-                "com/github/benmanes/caffeine/",
                 "com/hera/craftkit/",
                 "io/papermc/",
                 "io/lettuce/",
+                "io/netty/",
+                "redis/clients/authentication/",
+                "reactor/",
+                "org/reactivestreams/",
+                "com/stephanofer/networkboosters/",
                 "net/kyori/",
                 "org/bukkit/",
                 "org/incendo/cloud/",
                 "com/zaxxer/hikari/",
                 "org/flywaydb/",
-                "com/mysql/"
+                "tools/jackson/",
+                "com/fasterxml/jackson/",
+                "com/mysql/",
+                "com/google/protobuf/"
             )
             check(entries.none { entry -> forbidden.any(entry::startsWith) }) {
-                "Shadow JAR contains dependencies not enabled in block 1"
+                "Shadow JAR contains unrelocated or externally provided dependencies"
             }
         }
     }

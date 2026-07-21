@@ -66,6 +66,17 @@ class NetworkPointsConfigTest {
     }
 
     @Test
+    void requiresAutoReconnectForRecoverableRedisStartup() throws Exception {
+        new NetworkPointsConfig(directory).start();
+        replace(directory.resolve("config.yml"), "auto-reconnect: true", "auto-reconnect: false");
+
+        ConfigValidationException exception = assertThrows(ConfigValidationException.class,
+                () -> new NetworkPointsConfig(directory).start());
+
+        assertTrue(exception.errors().stream().anyMatch(error -> error.contains("redis.auto-reconnect")));
+    }
+
+    @Test
     void invalidReloadKeepsPreviousSnapshot() throws Exception {
         NetworkPointsConfig configuration = new NetworkPointsConfig(directory);
         ConfigSnapshot original = configuration.start();

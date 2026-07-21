@@ -10,3 +10,10 @@ load: POSTWORLD
 authors: [stephanofer]
 website: https://stephanofer.com
 description: Global points economy for HERA Network.
+
+dependencies:
+  server:
+    NetworkBoosters:
+      load: BEFORE
+      required: false
+      join-classpath: true

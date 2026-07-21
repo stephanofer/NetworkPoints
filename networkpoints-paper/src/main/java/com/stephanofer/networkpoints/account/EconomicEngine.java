@@ -4,7 +4,10 @@ import com.hera.craftkit.database.Database;
 import com.hera.craftkit.database.TransactionIsolation;
 import com.hera.craftkit.database.TransactionOptions;
 import com.hera.craftkit.database.TransactionRetryPolicy;
+import com.stephanofer.networkpoints.award.AwardCalculation;
+import com.stephanofer.networkpoints.award.AwardCalculator;
 import com.stephanofer.networkpoints.api.balance.BalanceSnapshot;
+import com.stephanofer.networkpoints.api.request.AwardRequest;
 import com.stephanofer.networkpoints.api.request.CreditRequest;
 import com.stephanofer.networkpoints.api.request.DebitRequest;
 import com.stephanofer.networkpoints.api.request.SetBalanceRequest;
@@ -40,6 +43,7 @@ public final class EconomicEngine {
     private final Database database;
     private final AccountRepository accounts;
     private final TransactionRepository transactions;
+    private final AwardCalculator awards;
     private final BigDecimal maximumBalance;
     private final String serverId;
 
@@ -47,13 +51,24 @@ public final class EconomicEngine {
             Database database,
             AccountRepository accounts,
             TransactionRepository transactions,
+            AwardCalculator awards,
             BigDecimal maximumBalance,
             String serverId) {
         this.database = Objects.requireNonNull(database, "database");
         this.accounts = Objects.requireNonNull(accounts, "accounts");
         this.transactions = Objects.requireNonNull(transactions, "transactions");
+        this.awards = Objects.requireNonNull(awards, "awards");
         this.maximumBalance = Objects.requireNonNull(maximumBalance, "maximumBalance");
         this.serverId = Objects.requireNonNull(serverId, "serverId");
+    }
+
+    public CompletableFuture<MutationResult> award(AwardRequest request) {
+        Objects.requireNonNull(request, "request");
+        CompletableFuture<MutationResult> attempt = this.database.transaction(MUTATION_OPTIONS,
+                connection -> award(connection, request));
+        SingleCommand command = new SingleCommand(
+                request.playerId(), request.amount(), request.context(), MutationType.AWARD, TransactionKind.AWARD);
+        return recoverSingle(command, attempt);
     }
 
     public CompletableFuture<MutationResult> credit(CreditRequest request) {
@@ -129,6 +144,38 @@ public final class EconomicEngine {
         return successful(command, account.snapshot(), after, decision.delta(), false);
     }
 
+    private MutationResult award(Connection connection, AwardRequest request) throws SQLException {
+        SingleCommand command = new SingleCommand(
+                request.playerId(), request.amount(), request.context(), MutationType.AWARD, TransactionKind.AWARD);
+        AccountRecord account = this.accounts.lock(connection, List.of(request.playerId())).get(request.playerId());
+        if (account == null) {
+            return rejected(command, MutationStatus.ACCOUNT_NOT_FOUND, Optional.empty());
+        }
+
+        List<TransactionRecord> existing = this.transactions.findOperation(connection, request.context().operationId());
+        if (!existing.isEmpty()) {
+            return replaySingle(command, existing);
+        }
+
+        Optional<AwardCalculation> calculated = this.awards.calculate(request);
+        if (calculated.isEmpty()) {
+            return rejected(command, MutationStatus.BOOSTER_STATE_NOT_READY, Optional.of(account.snapshot()));
+        }
+        AwardCalculation award = calculated.orElseThrow();
+        EconomicDecisions.Decision decision = EconomicDecisions.credit(
+                account.snapshot().balance(), award.finalAmount(), this.maximumBalance);
+        if (!decision.success()) {
+            return rejected(command, decision.status(), Optional.of(account.snapshot()));
+        }
+
+        BalanceSnapshot after = this.accounts.updateBalance(connection, account, decision.balanceAfter());
+        this.transactions.insert(connection, new TransactionWrite(
+                request.context().operationId(), 0, request.playerId(), Optional.empty(), TransactionKind.AWARD,
+                decision.delta(), award.baseAmount(), award.multiplier(), account.snapshot(), after,
+                request.context(), this.serverId));
+        return successfulAward(command, account.snapshot(), after, award, false);
+    }
+
     private TransferResult transfer(Connection connection, TransferRequest request) throws SQLException {
         Map<UUID, AccountRecord> locked = this.accounts.lock(
                 connection, List.of(request.senderId(), request.recipientId()));
@@ -189,6 +236,12 @@ public final class EconomicEngine {
         TransactionRecord record = records.getFirst();
         BalanceSnapshot before = new BalanceSnapshot(record.accountId(), record.balanceBefore(), record.revisionBefore());
         BalanceSnapshot after = new BalanceSnapshot(record.accountId(), record.balanceAfter(), record.revisionAfter());
+        if (command.type() == MutationType.AWARD) {
+            BigDecimal base = record.baseAmount().orElseThrow();
+            BigDecimal multiplier = record.multiplier().orElseThrow();
+            return successfulAward(command, before, after,
+                    new AwardCalculation(base, multiplier, record.delta()), true);
+        }
         return successful(command, before, after, record.delta(), true);
     }
 
@@ -237,6 +290,19 @@ public final class EconomicEngine {
                 Optional.of(DIRECT_MULTIPLIER),
                 Optional.of(command.type() == MutationType.SET_BALANCE ? after.balance() : command.amount()),
                 replayed);
+    }
+
+    private static MutationResult successfulAward(
+            SingleCommand command,
+            BalanceSnapshot before,
+            BalanceSnapshot after,
+            AwardCalculation award,
+            boolean replayed) {
+        return new MutationResult(
+                MutationStatus.SUCCESS, MutationType.AWARD, command.context().operationId(), command.playerId(),
+                Optional.of(before), Optional.of(after), Optional.of(award.finalAmount()),
+                Optional.of(award.baseAmount()), Optional.of(award.multiplier()),
+                Optional.of(award.finalAmount()), replayed);
     }
 
     private static MutationResult rejected(

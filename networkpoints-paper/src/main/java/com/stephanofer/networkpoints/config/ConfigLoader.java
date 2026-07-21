@@ -176,6 +176,7 @@ final class ConfigLoader {
         r.positive(commandTimeout, "redis.command-timeout-millis");
         r.positive(connectTimeout, "redis.connect-timeout-millis");
         r.positive(shutdownTimeout, "redis.shutdown-timeout-millis");
+        r.require(autoReconnect, "redis.auto-reconnect", "must be true because Redis starts in RECOVER mode");
         return new ConfigSnapshot.Redis(host, value(port), value(database), username, password, ssl, verifyPeer,
                 environment, keyPrefix, value(commandTimeout), value(connectTimeout), value(shutdownTimeout), autoReconnect);
     }
