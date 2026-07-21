@@ -25,12 +25,15 @@ import java.util.function.Function;
 import java.util.regex.Pattern;
 
 final class ConfigLoader {
-    private static final int CONFIG_VERSION = 1;
+    private static final int CONFIG_FILE_VERSION = 2;
+    private static final int COMMAND_FILE_VERSION = 1;
+    private static final int MESSAGE_FILE_VERSION = 1;
     private static final BigDecimal DECIMAL_30_2_MAX = new BigDecimal("9999999999999999999999999999.99");
     private static final Pattern COMPONENT_ID = Pattern.compile("[a-z0-9][a-z0-9._-]{0,63}");
     private static final Pattern COMMAND_NAME = Pattern.compile("[a-z0-9][a-z0-9_-]{0,31}");
     private static final Pattern PERMISSION = Pattern.compile("[a-z0-9][a-z0-9._-]*(?:\\.[a-z0-9][a-z0-9._-]*)+");
     private static final Pattern CRAFTKIT_COMPONENT = Pattern.compile("[A-Za-z0-9._:-]{1,256}");
+    private static final Pattern DATABASE_TABLE_PREFIX = Pattern.compile("[A-Za-z0-9_]*");
     private static final List<String> COMMAND_KEYS = List.of("balance", "pay", "give", "take", "set", "reset", "history", "reload", "status");
 
     private final Path dataDirectory;
@@ -51,8 +54,8 @@ final class ConfigLoader {
 
         Reader c = new Reader("config.yml", config, errors);
         Reader cmd = new Reader("commands.yml", commands, errors);
-        validateVersion(c);
-        validateVersion(cmd);
+        validateVersion(c, CONFIG_FILE_VERSION);
+        validateVersion(cmd, COMMAND_FILE_VERSION);
 
         String serverId = c.string("server-id");
         ConfigSnapshot.Database database = readDatabase(c);
@@ -126,15 +129,16 @@ final class ConfigLoader {
         return current.getMessage() == null ? current.getClass().getSimpleName() : current.getMessage();
     }
 
-    private static void validateVersion(Reader reader) {
+    private static void validateVersion(Reader reader, int expectedVersion) {
         Integer version = reader.integer("config-version");
-        reader.require(version != null && version == CONFIG_VERSION, "config-version", "must be " + CONFIG_VERSION);
+        reader.require(version != null && version == expectedVersion, "config-version", "must be " + expectedVersion);
     }
 
     private static ConfigSnapshot.Database readDatabase(Reader r) {
         String host = r.string("database.host");
         Integer port = r.integer("database.port");
         String name = r.string("database.name");
+        String tablePrefix = r.string("database.table-prefix");
         String username = r.string("database.username");
         String password = r.string("database.password");
         Integer maximumPoolSize = r.integer("database.pool.maximum-size");
@@ -145,6 +149,10 @@ final class ConfigLoader {
         r.notBlank(host, "database.host");
         r.require(port != null && port >= 1 && port <= 65535, "database.port", "must be between 1 and 65535");
         r.require(name != null && name.matches("[A-Za-z0-9_-]+"), "database.name", "must be a valid database identifier");
+        if (tablePrefix == null) {
+            tablePrefix = "networkpoints_";
+        }
+        r.require(DATABASE_TABLE_PREFIX.matcher(tablePrefix).matches(), "database.table-prefix", "must contain only letters, numbers, and underscores");
         r.notBlank(username, "database.username");
         r.require(password != null, "database.password", "is required");
         r.positive(maximumPoolSize, "database.pool.maximum-size");
@@ -154,7 +162,7 @@ final class ConfigLoader {
         r.positive(connectionTimeout, "database.pool.connection-timeout-millis");
         r.positive(validationTimeout, "database.pool.validation-timeout-millis");
         r.positive(shutdownTimeout, "database.executor.shutdown-timeout-millis");
-        return new ConfigSnapshot.Database(host, value(port), name, username, password, value(maximumPoolSize),
+        return new ConfigSnapshot.Database(host, value(port), name, tablePrefix, username, password, value(maximumPoolSize),
                 value(minimumIdle), value(connectionTimeout), value(validationTimeout), value(shutdownTimeout));
     }
 
@@ -378,7 +386,7 @@ final class ConfigLoader {
 
     private static ConfigSnapshot.Messages readMessages(String file, YamlDocument document, List<String> errors) {
         Reader r = new Reader(file, document, errors);
-        validateVersion(r);
+        validateVersion(r, MESSAGE_FILE_VERSION);
         Map<String, List<Map<String, Object>>> messages = new LinkedHashMap<>();
         for (Object rawKey : document.getKeys()) {
             String key = String.valueOf(rawKey);

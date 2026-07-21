@@ -1,4 +1,4 @@
-CREATE TABLE networkpoints_accounts (
+CREATE TABLE `${tablePrefix}accounts` (
     player_uuid BINARY(16) NOT NULL,
     last_known_name VARCHAR(16) NOT NULL,
     normalized_name VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NULL,
@@ -7,12 +7,12 @@ CREATE TABLE networkpoints_accounts (
     created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
     PRIMARY KEY (player_uuid),
-    UNIQUE KEY uk_networkpoints_accounts_normalized_name (normalized_name),
-    CONSTRAINT chk_networkpoints_accounts_balance CHECK (balance >= 0),
-    CONSTRAINT chk_networkpoints_accounts_revision CHECK (revision <= 9223372036854775807)
+    UNIQUE KEY `uk_${tablePrefix}accounts_normalized_name` (normalized_name),
+    CONSTRAINT `chk_${tablePrefix}accounts_balance` CHECK (balance >= 0),
+    CONSTRAINT `chk_${tablePrefix}accounts_revision` CHECK (revision <= 9223372036854775807)
 ) ENGINE = InnoDB;
 
-CREATE TABLE networkpoints_transactions (
+CREATE TABLE `${tablePrefix}transactions` (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     operation_id BINARY(16) NOT NULL,
     entry_index TINYINT UNSIGNED NOT NULL,
@@ -32,12 +32,12 @@ CREATE TABLE networkpoints_transactions (
     source_server_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     PRIMARY KEY (id),
-    UNIQUE KEY uk_networkpoints_transactions_operation_entry (operation_id, entry_index),
-    KEY idx_networkpoints_transactions_account_created (account_uuid, created_at),
-    KEY idx_networkpoints_transactions_operation (operation_id),
-    KEY idx_networkpoints_transactions_created (created_at),
-    CONSTRAINT fk_networkpoints_transactions_account
-        FOREIGN KEY (account_uuid) REFERENCES networkpoints_accounts (player_uuid),
-    CONSTRAINT chk_networkpoints_transactions_revision
+    UNIQUE KEY `uk_${tablePrefix}transactions_operation_entry` (operation_id, entry_index),
+    KEY `idx_${tablePrefix}transactions_account_created` (account_uuid, created_at),
+    KEY `idx_${tablePrefix}transactions_operation` (operation_id),
+    KEY `idx_${tablePrefix}transactions_created` (created_at),
+    CONSTRAINT `fk_${tablePrefix}transactions_account`
+        FOREIGN KEY (account_uuid) REFERENCES `${tablePrefix}accounts` (player_uuid),
+    CONSTRAINT `chk_${tablePrefix}transactions_revision`
         CHECK (revision_after = revision_before + 1)
 ) ENGINE = InnoDB;

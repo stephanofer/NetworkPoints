@@ -11,16 +11,22 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
 public final class AccountRepository {
 
     private static final String COLUMNS = "player_uuid, last_known_name, normalized_name, balance, revision";
+    private final String accountsTable;
+
+    public AccountRepository(String accountsTable) {
+        this.accountsTable = Objects.requireNonNull(accountsTable, "accountsTable");
+    }
 
     public Optional<AccountRecord> find(Connection connection, UUID playerId) throws SQLException {
         try (var statement = connection.prepareStatement(
-                "SELECT " + COLUMNS + " FROM networkpoints_accounts WHERE player_uuid = ?")) {
+                "SELECT " + COLUMNS + " FROM " + this.accountsTable + " WHERE player_uuid = ?")) {
             statement.setBytes(1, UuidBinary.bytes(playerId));
             try (var results = statement.executeQuery()) {
                 return results.next() ? Optional.of(map(results)) : Optional.empty();
@@ -30,7 +36,7 @@ public final class AccountRepository {
 
     public Optional<AccountRecord> findByName(Connection connection, String name) throws SQLException {
         try (var statement = connection.prepareStatement(
-                "SELECT " + COLUMNS + " FROM networkpoints_accounts WHERE normalized_name = ?")) {
+                "SELECT " + COLUMNS + " FROM " + this.accountsTable + " WHERE normalized_name = ?")) {
             statement.setString(1, AccountNames.normalize(name));
             try (var results = statement.executeQuery()) {
                 return results.next() ? Optional.of(map(results)) : Optional.empty();
@@ -43,7 +49,7 @@ public final class AccountRepository {
         Map<UUID, AccountRecord> accounts = new LinkedHashMap<>();
         for (UUID playerId : ordered) {
             try (var statement = connection.prepareStatement(
-                    "SELECT " + COLUMNS + " FROM networkpoints_accounts WHERE player_uuid = ? FOR UPDATE")) {
+                    "SELECT " + COLUMNS + " FROM " + this.accountsTable + " WHERE player_uuid = ? FOR UPDATE")) {
                 statement.setBytes(1, UuidBinary.bytes(playerId));
                 try (var results = statement.executeQuery()) {
                     if (results.next()) {
@@ -59,7 +65,7 @@ public final class AccountRepository {
         String validatedName = AccountNames.validate(name);
         claimName(connection, playerId, validatedName);
         try (var statement = connection.prepareStatement(
-                "INSERT INTO networkpoints_accounts "
+                "INSERT INTO " + this.accountsTable + " "
                         + "(player_uuid, last_known_name, normalized_name, balance, revision) VALUES (?, ?, ?, 0.00, 0) "
                         + "ON DUPLICATE KEY UPDATE last_known_name = VALUES(last_known_name), "
                         + "normalized_name = VALUES(normalized_name)")) {
@@ -75,7 +81,7 @@ public final class AccountRepository {
         String validatedName = AccountNames.validate(name);
         claimName(connection, playerId, validatedName);
         try (var statement = connection.prepareStatement(
-                "UPDATE networkpoints_accounts SET last_known_name = ?, normalized_name = ? WHERE player_uuid = ?")) {
+                "UPDATE " + this.accountsTable + " SET last_known_name = ?, normalized_name = ? WHERE player_uuid = ?")) {
             statement.setString(1, validatedName);
             statement.setString(2, AccountNames.normalize(validatedName));
             statement.setBytes(3, UuidBinary.bytes(playerId));
@@ -83,9 +89,9 @@ public final class AccountRepository {
         }
     }
 
-    private static void claimName(Connection connection, UUID playerId, String name) throws SQLException {
+    private void claimName(Connection connection, UUID playerId, String name) throws SQLException {
         try (var statement = connection.prepareStatement(
-                "UPDATE networkpoints_accounts SET normalized_name = NULL "
+                "UPDATE " + this.accountsTable + " SET normalized_name = NULL "
                         + "WHERE normalized_name = ? AND player_uuid <> ?")) {
             statement.setString(1, AccountNames.normalize(name));
             statement.setBytes(2, UuidBinary.bytes(playerId));
@@ -99,7 +105,7 @@ public final class AccountRepository {
             throw new SQLException("Account revision exhausted for " + account.playerId());
         }
         try (var statement = connection.prepareStatement(
-                "UPDATE networkpoints_accounts SET balance = ?, revision = revision + 1 "
+                "UPDATE " + this.accountsTable + " SET balance = ?, revision = revision + 1 "
                         + "WHERE player_uuid = ? AND revision = ?")) {
             statement.setBigDecimal(1, balance);
             statement.setBytes(2, UuidBinary.bytes(account.playerId()));

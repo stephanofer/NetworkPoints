@@ -20,7 +20,6 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
-import java.util.logging.Level;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
 import org.bukkit.entity.Player;
@@ -237,8 +236,8 @@ public final class PaymentController implements AutoCloseable {
             }
             Component renderedIdentity = rendered;
             if (identityFailure != null) {
-                this.plugin.getLogger().log(Level.WARNING,
-                        "Could not render recipient identity after a successful payment; using last known name",
+                this.plugin.getComponentLogger().warn(Component.text(
+                        "Could not render recipient identity after a successful payment; using last known name"),
                         identityFailure);
                 renderedIdentity = Component.text(recipient.lastKnownName());
             }

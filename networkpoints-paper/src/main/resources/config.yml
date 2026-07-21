@@ -1,4 +1,4 @@
-config-version: 1
+config-version: 2
 
 server-id: "lobby-1"
 
@@ -6,6 +6,7 @@ database:
   host: "127.0.0.1"
   port: 3306
   name: "networkpoints"
+  table-prefix: "networkpoints_"
   username: "networkpoints"
   password: ""
   pool:

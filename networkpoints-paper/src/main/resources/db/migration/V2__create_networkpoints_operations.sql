@@ -1,4 +1,4 @@
-CREATE TABLE networkpoints_operations (
+CREATE TABLE `${tablePrefix}operations` (
     operation_id BINARY(16) NOT NULL,
     mutation_type VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     account_uuid BINARY(16) NOT NULL,
@@ -23,17 +23,17 @@ CREATE TABLE networkpoints_operations (
     final_amount DECIMAL(30, 2) NOT NULL,
     created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     PRIMARY KEY (operation_id),
-    KEY idx_networkpoints_operations_account_created (account_uuid, created_at),
-    CONSTRAINT fk_networkpoints_operations_account
-        FOREIGN KEY (account_uuid) REFERENCES networkpoints_accounts (player_uuid),
-    CONSTRAINT chk_networkpoints_operations_account_revision
+    KEY `idx_${tablePrefix}operations_account_created` (account_uuid, created_at),
+    CONSTRAINT `fk_${tablePrefix}operations_account`
+        FOREIGN KEY (account_uuid) REFERENCES `${tablePrefix}accounts` (player_uuid),
+    CONSTRAINT `chk_${tablePrefix}operations_account_revision`
         CHECK (account_revision_after = account_revision_before + 1),
-    CONSTRAINT chk_networkpoints_operations_counterparty_revision
+    CONSTRAINT `chk_${tablePrefix}operations_counterparty_revision`
         CHECK (counterparty_revision_before IS NULL
             OR counterparty_revision_after = counterparty_revision_before + 1)
 ) ENGINE = InnoDB;
 
-CREATE TABLE networkpoints_operation_boosters (
+CREATE TABLE `${tablePrefix}operation_boosters` (
     operation_id BINARY(16) NOT NULL,
     entry_index SMALLINT UNSIGNED NOT NULL,
     activation_id BINARY(16) NOT NULL,
@@ -41,6 +41,6 @@ CREATE TABLE networkpoints_operation_boosters (
     activation_group VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
     multiplier DECIMAL(20, 8) NOT NULL,
     PRIMARY KEY (operation_id, entry_index),
-    CONSTRAINT fk_networkpoints_operation_boosters_operation
-        FOREIGN KEY (operation_id) REFERENCES networkpoints_operations (operation_id)
+    CONSTRAINT `fk_${tablePrefix}operation_boosters_operation`
+        FOREIGN KEY (operation_id) REFERENCES `${tablePrefix}operations` (operation_id)
 ) ENGINE = InnoDB;

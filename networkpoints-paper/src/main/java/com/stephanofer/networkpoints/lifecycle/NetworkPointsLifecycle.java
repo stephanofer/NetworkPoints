@@ -214,9 +214,10 @@ public final class NetworkPointsLifecycle implements Listener {
                 snapshot.restartRequired().database(), this.plugin.getClass().getClassLoader());
         this.database.migrate().join();
 
-        AccountRepository accounts = new AccountRepository();
-        TransactionRepository transactions = new TransactionRepository();
-        OperationRepository operations = new OperationRepository();
+        AccountRepository accounts = new AccountRepository(this.database.table("accounts"));
+        TransactionRepository transactions = new TransactionRepository(this.database.table("transactions"));
+        OperationRepository operations = new OperationRepository(
+                this.database.table("operations"), this.database.table("operation_boosters"));
         this.accountStore = new AccountStore(this.database, accounts);
         this.auditStore = new AuditStore(this.database, transactions, Clock.systemUTC());
         ConfigSnapshot.Cache cacheConfig = snapshot.reloadable().cache();

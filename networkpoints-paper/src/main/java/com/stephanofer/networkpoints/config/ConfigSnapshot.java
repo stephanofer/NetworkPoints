@@ -47,6 +47,7 @@ public record ConfigSnapshot(
             String host,
             int port,
             String name,
+            String tablePrefix,
             String username,
             String password,
             int maximumPoolSize,
@@ -57,10 +58,11 @@ public record ConfigSnapshot(
     ) {
         @Override
         public String toString() {
-            return "Database[host=" + host + ", port=" + port + ", name=" + name + ", username=" + username
-                    + ", password=<hidden>, maximumPoolSize=" + maximumPoolSize + ", minimumIdle=" + minimumIdle
-                    + ", connectionTimeoutMillis=" + connectionTimeoutMillis + ", validationTimeoutMillis="
-                    + validationTimeoutMillis + ", shutdownTimeoutMillis=" + shutdownTimeoutMillis + "]";
+            return "Database[host=" + host + ", port=" + port + ", name=" + name + ", tablePrefix="
+                    + tablePrefix + ", username=" + username + ", password=<hidden>, maximumPoolSize="
+                    + maximumPoolSize + ", minimumIdle=" + minimumIdle + ", connectionTimeoutMillis="
+                    + connectionTimeoutMillis + ", validationTimeoutMillis=" + validationTimeoutMillis
+                    + ", shutdownTimeoutMillis=" + shutdownTimeoutMillis + "]";
         }
     }
 

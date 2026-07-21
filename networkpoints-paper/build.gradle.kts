@@ -63,7 +63,6 @@ tasks.shadowJar {
     relocate("com.github.benmanes.caffeine", "com.stephanofer.networkpoints.libs.caffeine")
     relocate("org.jspecify", "com.stephanofer.networkpoints.libs.jspecify")
     relocate("com.google.errorprone.annotations", "com.stephanofer.networkpoints.libs.errorprone.annotations")
-    relocate("org.slf4j", "com.stephanofer.networkpoints.libs.slf4j")
     relocate("io.lettuce", "com.stephanofer.networkpoints.libs.lettuce")
     relocate("redis.clients.authentication", "com.stephanofer.networkpoints.libs.redisAuthx")
     relocate("io.netty", "com.stephanofer.networkpoints.libs.netty")
@@ -71,6 +70,10 @@ tasks.shadowJar {
     relocate("org.reactivestreams", "com.stephanofer.networkpoints.libs.reactiveStreams")
     relocate("org.incendo.cloud", "com.stephanofer.networkpoints.libs.cloud")
     relocate("io.leangen.geantyref", "com.stephanofer.networkpoints.libs.geantyref")
+
+    dependencies {
+        exclude(dependency("org.slf4j:slf4j-api:.*"))
+    }
 }
 
 val shadowArchive = tasks.shadowJar.flatMap { it.archiveFile }
@@ -93,7 +96,6 @@ val verifyShadowJar = tasks.register("verifyShadowJar") {
                 "com/stephanofer/networkpoints/libs/caffeine/cache/Caffeine.class",
                 "com/stephanofer/networkpoints/libs/jspecify/annotations/Nullable.class",
                 "com/stephanofer/networkpoints/libs/errorprone/annotations/CanIgnoreReturnValue.class",
-                "com/stephanofer/networkpoints/libs/slf4j/LoggerFactory.class",
                 "com/stephanofer/networkpoints/libs/craftkit/redis/RedisClient.class",
                 "com/stephanofer/networkpoints/libs/cloud/paper/PaperCommandManager.class",
                 "com/stephanofer/networkpoints/libs/geantyref/GenericTypeReflector.class",

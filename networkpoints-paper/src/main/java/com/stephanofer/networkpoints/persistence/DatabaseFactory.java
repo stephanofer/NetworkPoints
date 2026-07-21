@@ -4,6 +4,7 @@ import com.hera.craftkit.database.Database;
 import com.hera.craftkit.database.DatabaseConfig;
 import com.hera.craftkit.database.Databases;
 import com.hera.craftkit.database.ExecutorConfig;
+import com.hera.craftkit.database.ExistingSchemaStrategy;
 import com.hera.craftkit.database.MigrationConfig;
 import com.hera.craftkit.database.PoolConfig;
 import com.stephanofer.networkpoints.config.ConfigSnapshot;
@@ -29,12 +30,14 @@ public final class DatabaseFactory {
                 .shutdownTimeoutMillis(source.shutdownTimeoutMillis())
                 .build();
         MigrationConfig migration = MigrationConfig.builder()
+                .existingSchemaStrategy(ExistingSchemaStrategy.BASELINE_AT_ZERO)
                 .classLoader(Objects.requireNonNull(classLoader, "classLoader"))
                 .build();
         DatabaseConfig config = DatabaseConfig.builder()
                 .host(source.host())
                 .port(source.port())
                 .database(source.name())
+                .tablePrefix(source.tablePrefix())
                 .username(source.username())
                 .password(source.password())
                 .pool(pool)

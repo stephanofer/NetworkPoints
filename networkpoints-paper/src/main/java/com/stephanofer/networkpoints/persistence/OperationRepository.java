@@ -7,16 +7,24 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import net.kyori.adventure.key.Key;
 
 public final class OperationRepository {
+    private final String operationsTable;
+    private final String operationBoostersTable;
+
+    public OperationRepository(String operationsTable, String operationBoostersTable) {
+        this.operationsTable = Objects.requireNonNull(operationsTable, "operationsTable");
+        this.operationBoostersTable = Objects.requireNonNull(operationBoostersTable, "operationBoostersTable");
+    }
 
     public Optional<OperationRecord> find(Connection connection, UUID operationId) throws SQLException {
         OperationRecord operation;
         try (var statement = connection.prepareStatement(
-                "SELECT * FROM networkpoints_operations WHERE operation_id = ?")) {
+                "SELECT * FROM " + this.operationsTable + " WHERE operation_id = ?")) {
             statement.setBytes(1, UuidBinary.bytes(operationId));
             try (var results = statement.executeQuery()) {
                 if (!results.next()) {
@@ -30,7 +38,7 @@ public final class OperationRepository {
 
     public void insert(Connection connection, OperationRecord operation) throws SQLException {
         try (var statement = connection.prepareStatement(
-                "INSERT INTO networkpoints_operations (operation_id, mutation_type, account_uuid, "
+                "INSERT INTO " + this.operationsTable + " (operation_id, mutation_type, account_uuid, "
                         + "counterparty_uuid, request_amount, source, actor_uuid, source_reference, award_game_id, "
                         + "award_server_id, account_balance_before, account_balance_after, account_revision_before, "
                         + "account_revision_after, counterparty_balance_before, counterparty_balance_after, "
@@ -89,11 +97,11 @@ public final class OperationRepository {
                 appliedBoosts);
     }
 
-    private static java.util.List<AppliedAwardBoost> appliedBoosts(Connection connection, UUID operationId)
+    private java.util.List<AppliedAwardBoost> appliedBoosts(Connection connection, UUID operationId)
             throws SQLException {
         try (var statement = connection.prepareStatement(
                 "SELECT activation_id, booster_id, activation_group, multiplier "
-                        + "FROM networkpoints_operation_boosters WHERE operation_id = ? ORDER BY entry_index")) {
+                        + "FROM " + this.operationBoostersTable + " WHERE operation_id = ? ORDER BY entry_index")) {
             statement.setBytes(1, UuidBinary.bytes(operationId));
             try (var results = statement.executeQuery()) {
                 var boosts = new java.util.ArrayList<AppliedAwardBoost>();
@@ -109,12 +117,12 @@ public final class OperationRepository {
         }
     }
 
-    private static void insertAppliedBoosts(Connection connection, OperationRecord operation) throws SQLException {
+    private void insertAppliedBoosts(Connection connection, OperationRecord operation) throws SQLException {
         if (operation.appliedBoosts().isEmpty()) {
             return;
         }
         try (var statement = connection.prepareStatement(
-                "INSERT INTO networkpoints_operation_boosters (operation_id, entry_index, activation_id, booster_id, "
+                "INSERT INTO " + this.operationBoostersTable + " (operation_id, entry_index, activation_id, booster_id, "
                         + "activation_group, multiplier) VALUES (?, ?, ?, ?, ?, ?)")) {
             for (int index = 0; index < operation.appliedBoosts().size(); index++) {
                 AppliedAwardBoost boost = operation.appliedBoosts().get(index);

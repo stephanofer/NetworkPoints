@@ -7,6 +7,7 @@ import java.sql.Types;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -15,10 +16,15 @@ public final class TransactionRepository {
     private static final String COLUMNS = "id, operation_id, entry_index, account_uuid, counterparty_uuid, "
             + "transaction_type, delta, base_amount, multiplier, balance_before, balance_after, "
             + "revision_before, revision_after, actor_uuid, source, source_reference, source_server_id, created_at";
+    private final String transactionsTable;
+
+    public TransactionRepository(String transactionsTable) {
+        this.transactionsTable = Objects.requireNonNull(transactionsTable, "transactionsTable");
+    }
 
     public List<TransactionRecord> findOperation(Connection connection, UUID operationId) throws SQLException {
         try (var statement = connection.prepareStatement(
-                "SELECT " + COLUMNS + " FROM networkpoints_transactions WHERE operation_id = ? ORDER BY entry_index")) {
+                "SELECT " + COLUMNS + " FROM " + this.transactionsTable + " WHERE operation_id = ? ORDER BY entry_index")) {
             statement.setBytes(1, UuidBinary.bytes(operationId));
             try (var results = statement.executeQuery()) {
                 List<TransactionRecord> records = new ArrayList<>(2);
@@ -32,7 +38,7 @@ public final class TransactionRepository {
 
     public void insert(Connection connection, TransactionWrite write) throws SQLException {
         try (var statement = connection.prepareStatement(
-                "INSERT INTO networkpoints_transactions (operation_id, entry_index, account_uuid, "
+                "INSERT INTO " + this.transactionsTable + " (operation_id, entry_index, account_uuid, "
                         + "counterparty_uuid, transaction_type, delta, base_amount, multiplier, balance_before, "
                         + "balance_after, revision_before, revision_after, actor_uuid, source, source_reference, "
                         + "source_server_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
@@ -63,7 +69,7 @@ public final class TransactionRepository {
     public List<TransactionRecord> history(Connection connection, UUID accountId, int limit, int offset)
             throws SQLException {
         try (var statement = connection.prepareStatement(
-                "SELECT " + COLUMNS + " FROM networkpoints_transactions WHERE account_uuid = ? "
+                "SELECT " + COLUMNS + " FROM " + this.transactionsTable + " WHERE account_uuid = ? "
                         + "ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?")) {
             statement.setBytes(1, UuidBinary.bytes(accountId));
             statement.setInt(2, limit);
@@ -80,7 +86,7 @@ public final class TransactionRepository {
 
     public int deleteBefore(Connection connection, Instant cutoff, int batchSize) throws SQLException {
         try (var statement = connection.prepareStatement(
-                "DELETE FROM networkpoints_transactions WHERE created_at < ? ORDER BY created_at LIMIT ?")) {
+                "DELETE FROM " + this.transactionsTable + " WHERE created_at < ? ORDER BY created_at LIMIT ?")) {
             statement.setTimestamp(1, java.sql.Timestamp.from(cutoff));
             statement.setInt(2, batchSize);
             return statement.executeUpdate();

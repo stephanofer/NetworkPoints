@@ -26,7 +26,6 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
-import java.util.logging.Level;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
 import org.bukkit.command.CommandSender;
@@ -271,8 +270,8 @@ public final class PointsCommandController {
         identity(target).whenComplete((identity, identityFailure) -> main(() -> {
             Component renderedIdentity = identity;
             if (identityFailure != null) {
-                this.plugin.getLogger().log(Level.WARNING,
-                        "Could not render player identity after a successful points mutation; using last known name",
+                this.plugin.getComponentLogger().warn(Component.text(
+                        "Could not render player identity after a successful points mutation; using last known name"),
                         identityFailure);
                 renderedIdentity = Component.text(target.lastKnownName());
             }
