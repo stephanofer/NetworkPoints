@@ -35,7 +35,13 @@ public record MutationContext(
             if (reference.isBlank()) {
                 throw new IllegalArgumentException("sourceReference must not be blank");
             }
+            if (reference.length() > 255) {
+                throw new IllegalArgumentException("sourceReference must not exceed 255 characters");
+            }
         });
+        if (source.asString().length() > 128) {
+            throw new IllegalArgumentException("source must not exceed 128 characters");
+        }
     }
 
     /**
