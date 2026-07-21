@@ -1,0 +1,116 @@
+config-version: 1
+
+server-id: "lobby-1"
+
+database:
+  host: "127.0.0.1"
+  port: 3306
+  name: "networkpoints"
+  username: "networkpoints"
+  password: ""
+  pool:
+    maximum-size: 10
+    minimum-idle: 2
+    connection-timeout-millis: 5000
+    validation-timeout-millis: 5000
+  executor:
+    shutdown-timeout-millis: 10000
+
+redis:
+  host: "127.0.0.1"
+  port: 6379
+  database: 0
+  username: ""
+  password: ""
+  ssl: false
+  verify-peer: true
+  environment: "default"
+  key-prefix: "networkpoints"
+  command-timeout-millis: 3000
+  connect-timeout-millis: 3000
+  shutdown-timeout-millis: 10000
+  auto-reconnect: true
+
+currency:
+  display-name:
+    singular: "Point"
+    plural: "Points"
+  symbol: "✦"
+  display-format: "<amount> <symbol>"
+  maximum-balance: 999999999999999.00
+
+amount-input:
+  suffixes:
+    k: 1000
+    m: 1000000
+    b: 1000000000
+    t: 1000000000000
+    q: 1000000000000000
+
+amount-format:
+  default-mode: "COMPACT"
+  grouped-pattern: "#,##0.##"
+  grouping-separator: ","
+  decimal-separator: "."
+  compact:
+    - threshold: 1000
+      pattern: "0.#"
+      suffix: "K"
+      display: "<#a3d14d><amount>"
+    - threshold: 1000000
+      pattern: "0.#"
+      suffix: "M"
+      display: "<#ebbc23><amount>"
+    - threshold: 1000000000
+      pattern: "0.#"
+      suffix: "B"
+      display: "<#eb4b23><amount>"
+    - threshold: 1000000000000
+      pattern: "0.##"
+      suffix: "T"
+      display: "<#ff9999><amount>"
+    - threshold: 1000000000000000
+      pattern: "0.##"
+      suffix: "Q"
+      display: "<#ff3535><amount>"
+
+payments:
+  enabled: true
+  allow-offline-recipients: true
+  minimum-amount: 0.10
+  maximum-amount: 999999999999999.00
+  cooldown-millis: 500
+  confirmation:
+    enabled: true
+    minimum-amount: 10000000.00
+    expires-after-seconds: 30
+
+cache:
+  maximum-size: 100000
+  refresh-after-write-seconds: 30
+  expire-after-access-minutes: 10
+
+audit:
+  retention-days: 90
+  cleanup-interval-hours: 24
+  cleanup-batch-size: 1000
+  command-page-size: 10
+  maximum-command-page: 100
+
+integrations:
+  network-boosters:
+    enabled: true
+  luckperms:
+    enabled: true
+  network-player-settings:
+    enabled: true
+
+identity:
+  format: "<prefix><nick><country_flag>"
+  prefix-suffix: " "
+  flag-prefix: " "
+  luckperms-prefix-format: "MINIMESSAGE"
+
+placeholder-api:
+  enabled: true
+  unavailable-value: ""

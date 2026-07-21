@@ -1,0 +1,64 @@
+config-version: 1
+
+root:
+  name: "points"
+  aliases: ["point", "pts"]
+  permission: "networkpoints.balance"
+  enabled: true
+  description: "Shows your points balance."
+
+commands:
+  balance:
+    name: "balance"
+    aliases: ["bal"]
+    permission: "networkpoints.balance.others"
+    enabled: true
+    description: "Shows a points balance."
+  pay:
+    name: "pay"
+    aliases: ["send"]
+    permission: "networkpoints.pay"
+    enabled: true
+    description: "Sends points to another player."
+  give:
+    name: "give"
+    aliases: ["add"]
+    permission: "networkpoints.admin.give"
+    enabled: true
+    description: "Credits a player's account."
+  take:
+    name: "take"
+    aliases: ["remove"]
+    permission: "networkpoints.admin.take"
+    enabled: true
+    description: "Debits a player's account."
+  set:
+    name: "set"
+    aliases: []
+    permission: "networkpoints.admin.set"
+    enabled: true
+    description: "Sets a player's balance."
+  reset:
+    name: "reset"
+    aliases: []
+    permission: "networkpoints.admin.reset"
+    enabled: true
+    description: "Resets a player's balance."
+  history:
+    name: "history"
+    aliases: ["transactions"]
+    permission: "networkpoints.admin.history"
+    enabled: true
+    description: "Shows recent account transactions."
+  reload:
+    name: "reload"
+    aliases: []
+    permission: "networkpoints.admin.reload"
+    enabled: true
+    description: "Reloads safe NetworkPoints settings."
+  status:
+    name: "status"
+    aliases: []
+    permission: "networkpoints.admin.status"
+    enabled: true
+    description: "Shows the service status."

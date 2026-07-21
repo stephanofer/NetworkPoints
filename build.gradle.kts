@@ -14,6 +14,17 @@ subprojects {
 
     extensions.configure<JavaPluginExtension> {
         toolchain.languageVersion = JavaLanguageVersion.of(25)
+        withSourcesJar()
+    }
+
+    tasks.withType<JavaCompile>().configureEach {
+        options.release = 25
+        options.encoding = "UTF-8"
+        options.compilerArgs.add("-parameters")
+    }
+
+    tasks.withType<Javadoc>().configureEach {
+        options.encoding = "UTF-8"
     }
 
     tasks.withType<Test>().configureEach {

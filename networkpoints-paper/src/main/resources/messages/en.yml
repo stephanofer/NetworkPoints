@@ -1,0 +1,37 @@
+config-version: 1
+
+balance:
+  - type: "CHAT"
+    message: "<gray>Your balance: <amount></gray>"
+balance-other:
+  - type: "CHAT"
+    message: "<player><gray> has <amount>.</gray>"
+pay-sent:
+  - type: "CHAT"
+    message: "<green>You sent <amount> to <recipient>.</green>"
+  - type: "ACTION_BAR"
+    message: "<gray>Remaining balance: <balance></gray>"
+pay-received:
+  - type: "CHAT"
+    message: "<green>You received <amount> from <sender>.</green>"
+award-received:
+  - type: "CHAT"
+    message: "<green>+<amount></green> <gray>for <reason></gray>"
+no-permission:
+  - type: "CHAT"
+    message: "<red>You do not have permission to do that.</red>"
+invalid-amount:
+  - type: "CHAT"
+    message: "<red>The amount is invalid.</red>"
+service-unavailable:
+  - type: "CHAT"
+    message: "<red>The points service is unavailable.</red>"
+unknown-player:
+  - type: "CHAT"
+    message: "<red>Unknown player.</red>"
+reload-success:
+  - type: "CHAT"
+    message: "<green>The reloadable configuration was updated.</green>"
+reload-failed:
+  - type: "CHAT"
+    message: "<red>The configuration is invalid; the previous version remains active.</red>"

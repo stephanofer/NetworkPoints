@@ -1,0 +1,37 @@
+config-version: 1
+
+balance:
+  - type: "CHAT"
+    message: "<gray>Tu saldo: <amount></gray>"
+balance-other:
+  - type: "CHAT"
+    message: "<player><gray> tiene <amount>.</gray>"
+pay-sent:
+  - type: "CHAT"
+    message: "<green>Enviaste <amount> a <recipient>.</green>"
+  - type: "ACTION_BAR"
+    message: "<gray>Saldo restante: <balance></gray>"
+pay-received:
+  - type: "CHAT"
+    message: "<green>Recibiste <amount> de <sender>.</green>"
+award-received:
+  - type: "CHAT"
+    message: "<green>+<amount></green> <gray>por <reason></gray>"
+no-permission:
+  - type: "CHAT"
+    message: "<red>No tenés permiso para hacer eso.</red>"
+invalid-amount:
+  - type: "CHAT"
+    message: "<red>La cantidad no es válida.</red>"
+service-unavailable:
+  - type: "CHAT"
+    message: "<red>El servicio de puntos no está disponible.</red>"
+unknown-player:
+  - type: "CHAT"
+    message: "<red>Jugador desconocido.</red>"
+reload-success:
+  - type: "CHAT"
+    message: "<green>La configuración recargable fue actualizada.</green>"
+reload-failed:
+  - type: "CHAT"
+    message: "<red>La configuración es inválida; se mantuvo la versión anterior.</red>"
