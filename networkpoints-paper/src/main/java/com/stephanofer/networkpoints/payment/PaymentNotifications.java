@@ -19,6 +19,7 @@ public final class PaymentNotifications implements AutoCloseable {
     private final String serverId;
     private final String channel;
     private final PaymentNotificationCodec codec;
+    private final PaymentNotificationFilter filter = new PaymentNotificationFilter();
     private final NetworkPointsService points;
     private final PlayerIdentityService identities;
     private final FeedbackService feedback;
@@ -50,7 +51,9 @@ public final class PaymentNotifications implements AutoCloseable {
         if (!this.open.get()) {
             return;
         }
-        deliver(notification);
+        if (this.filter.shouldDeliver(notification.operationId())) {
+            deliver(notification);
+        }
         if (!this.redis.operationalStatus().isOperational()) {
             return;
         }
@@ -72,6 +75,9 @@ public final class PaymentNotifications implements AutoCloseable {
             return;
         }
         if (notification.sourceServerId().equals(this.serverId)) {
+            return;
+        }
+        if (!this.filter.shouldDeliver(notification.operationId())) {
             return;
         }
         this.plugin.getServer().getScheduler().runTask(this.plugin, () -> deliver(notification));
@@ -97,12 +103,13 @@ public final class PaymentNotifications implements AutoCloseable {
             if (current == null) {
                 return;
             }
+            Component renderedIdentity = rendered;
             if (failure != null) {
                 this.failureHandler.accept(failure);
-                return;
+                renderedIdentity = Component.text(notification.senderLastKnownName());
             }
             this.feedback.send(current, "pay-received", Map.of(
-                    "amount", this.points.formatAmount(notification.amount()), "sender", rendered));
+                    "amount", this.points.formatAmount(notification.amount()), "sender", renderedIdentity));
         }));
     }
 
@@ -110,5 +117,6 @@ public final class PaymentNotifications implements AutoCloseable {
     public void close() {
         this.open.set(false);
         this.subscription.close();
+        this.filter.close();
     }
 }

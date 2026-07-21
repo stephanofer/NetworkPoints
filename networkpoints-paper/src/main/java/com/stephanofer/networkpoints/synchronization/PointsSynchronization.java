@@ -69,6 +69,7 @@ public final class PointsSynchronization implements PointsInvalidationPublisher,
             return;
         }
         this.balances.refresh(invalidation.playerId()).exceptionally(failure -> {
+            this.filter.allowRetry(invalidation);
             this.failureHandler.accept(failure);
             return null;
         });

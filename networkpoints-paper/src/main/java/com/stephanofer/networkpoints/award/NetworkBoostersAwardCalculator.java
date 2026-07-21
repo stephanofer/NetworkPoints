@@ -9,42 +9,39 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.function.Function;
-import java.util.function.Predicate;
 
 public final class NetworkBoostersAwardCalculator implements AwardCalculator {
 
-    private final Predicate<UUID> readiness;
-    private final Function<BoostRequest, BoostCalculation> calculation;
+    private final Function<BoostRequest, Optional<BoostCalculation>> calculation;
 
     public NetworkBoostersAwardCalculator(NetworkBoostersService boosters) {
         Objects.requireNonNull(boosters, "boosters");
-        this.readiness = boosters::isReady;
-        this.calculation = boosters::calculate;
+        this.calculation = boosters::calculateIfReady;
     }
 
-    NetworkBoostersAwardCalculator(
-            Predicate<UUID> readiness,
-            Function<BoostRequest, BoostCalculation> calculation) {
-        this.readiness = Objects.requireNonNull(readiness, "readiness");
+    NetworkBoostersAwardCalculator(Function<BoostRequest, Optional<BoostCalculation>> calculation) {
         this.calculation = Objects.requireNonNull(calculation, "calculation");
     }
 
     @Override
     public Optional<AwardCalculation> calculate(AwardRequest request) {
         Objects.requireNonNull(request, "request");
-        if (!this.readiness.test(request.playerId())) {
+        Optional<BoostCalculation> result = this.calculation.apply(BoostRequest.of(
+                request.playerId(), BoosterTarget.NETWORK_POINTS, request.amount(), request.gameId(), request.serverId()));
+        if (result.isEmpty()) {
             return Optional.empty();
         }
-        BoostCalculation calculated = this.calculation.apply(BoostRequest.of(
-                request.playerId(), BoosterTarget.NETWORK_PROGRESSION_POINTS, request.amount(),
-                request.gameId(), request.serverId()));
+        BoostCalculation calculated = result.orElseThrow();
         if (calculated.baseAmount().compareTo(request.amount()) != 0) {
             throw new IllegalStateException("NetworkBoosters returned a different base amount");
         }
         BigDecimal multiplier = calculated.multiplier();
         BigDecimal finalAmount = request.amount().multiply(multiplier).setScale(2, RoundingMode.HALF_UP);
-        return Optional.of(new AwardCalculation(request.amount(), multiplier, finalAmount));
+        var appliedBoosts = calculated.appliedBoosts().stream()
+                .map(boost -> new AppliedAwardBoost(boost.activationId(), boost.boosterId().value(),
+                        boost.activationGroup().value(), boost.multiplier()))
+                .toList();
+        return Optional.of(new AwardCalculation(request.amount(), multiplier, finalAmount, appliedBoosts));
     }
 }

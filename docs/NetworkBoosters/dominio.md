@@ -11,7 +11,7 @@ Todos los records públicos validan sus invariantes al construirse y copian sus 
 | `ActivationGroup` | `value` | Igual que `BoosterId`. Fábrica `of(String)`. |
 | `BoosterTarget` | `key` | Namespaced key; namespace máx. 64 y valor máx. 128. Fábrica `of(String)`. |
 
-Los cuatro recortan espacios y normalizan a minúsculas. `BoosterTarget.NETWORK_PROGRESSION_POINTS` representa `network_progression:points`.
+Los cuatro recortan espacios y normalizan a minúsculas. `BoosterTarget.NETWORK_POINTS` representa `network_points:points`.
 
 ## `BoosterDefinition`
 

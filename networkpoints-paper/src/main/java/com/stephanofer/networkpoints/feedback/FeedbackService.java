@@ -51,6 +51,15 @@ public final class FeedbackService implements AutoCloseable {
             return;
         }
         String language = audience instanceof Player player ? this.settings.resolvedLanguage(player).code() : "en";
+        send(audience, key, values, language);
+    }
+
+    public void sendImmediate(Player player, String key, Map<String, Component> values) {
+        Objects.requireNonNull(player, "player");
+        send(player, key, values, player.locale().getLanguage());
+    }
+
+    private void send(CommandSender audience, String key, Map<String, Component> values, String language) {
         TagResolver resolver = TagResolver.resolver(values.entrySet().stream()
                 .map(entry -> Placeholder.component(entry.getKey(), entry.getValue())).toArray(TagResolver[]::new));
         for (FeedbackAction action : this.catalog.get().actions(language, key)) {

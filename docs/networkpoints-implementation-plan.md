@@ -163,6 +163,7 @@ Implementar la fuente autoritativa de la economía y completar todas las mutacio
 - Migración Flyway inicial.
 - Tabla `networkpoints_accounts`.
 - Tabla `networkpoints_transactions` e índices aprobados.
+- Tabla técnica `networkpoints_operations` para idempotencia independiente de la retención del historial.
 - Conversión JDBC de UUID mediante `BINARY(16)`.
 - Repositorio de cuentas y snapshots.
 - Creación de cuentas y saldo inicial.
@@ -252,7 +253,7 @@ Transformar el núcleo durable local en un servicio de network: lecturas rápida
 - Recuperación de suscripciones y estado operativo.
 - Integración opcional con `NetworkBoostersService`.
 - Pipeline `award` como única mutación boosteable.
-- Uso de `BoosterTarget.NETWORK_PROGRESSION_POINTS`.
+- Uso de `BoosterTarget.NETWORK_POINTS` mediante `calculateIfReady`.
 - Manejo explícito de `BOOSTER_STATE_NOT_READY`.
 - Persistencia de cantidad base, multiplicador y cantidad final.
 - `PointsBalanceChangeEvent`, `PointsTransferEvent` y `PointsAwardEvent` posteriores al commit.
@@ -487,6 +488,7 @@ Este bloque no es el lugar para implementar features omitidas. Cualquier feature
 - Reload válido e inválido.
 - Limpieza de cachés, bossbars, dialogs y subscriptions.
 - Retención y borrado por lotes del historial.
+- Replay idempotente después de borrar el historial retenido.
 - Revisión del main thread para confirmar ausencia de JDBC, Redis bloqueante y waits.
 - Revisión de allocations y paths calientes de placeholders, caché y formatters.
 - Verificación de límites del pool y executors bajo carga manual controlada.

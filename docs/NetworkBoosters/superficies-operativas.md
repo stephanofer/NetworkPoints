@@ -50,8 +50,8 @@ Identificador: `networkboosters`. La expansión se registra solo si `placeholder
 Para codificar un target namespaced en un placeholder, reemplazar `:` por `__`:
 
 ```text
-%networkboosters_multiplier_network_progression__points%
-%networkboosters_active_network_progression__points%
+%networkboosters_multiplier_network_points__points%
+%networkboosters_active_network_points__points%
 ```
 
 Antes del readiness se devuelven valores neutrales:

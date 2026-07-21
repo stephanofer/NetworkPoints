@@ -8,6 +8,7 @@ public record PaymentNotification(
         UUID operationId,
         String sourceServerId,
         UUID senderId,
+        String senderLastKnownName,
         UUID recipientId,
         BigDecimal amount
 ) {
@@ -15,9 +16,11 @@ public record PaymentNotification(
         Objects.requireNonNull(operationId, "operationId");
         Objects.requireNonNull(sourceServerId, "sourceServerId");
         Objects.requireNonNull(senderId, "senderId");
+        Objects.requireNonNull(senderLastKnownName, "senderLastKnownName");
         Objects.requireNonNull(recipientId, "recipientId");
         Objects.requireNonNull(amount, "amount");
-        if (sourceServerId.isBlank() || senderId.equals(recipientId) || amount.signum() <= 0 || amount.scale() > 2) {
+        if (sourceServerId.isBlank() || senderLastKnownName.isBlank() || senderId.equals(recipientId)
+                || amount.signum() <= 0 || amount.scale() > 2) {
             throw new IllegalArgumentException("Invalid payment notification");
         }
         amount = amount.setScale(2);

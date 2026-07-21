@@ -26,6 +26,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
+import java.util.logging.Level;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
 import org.bukkit.command.CommandSender;
@@ -81,10 +82,14 @@ public final class PointsCommandController {
     public void register() {
         ConfigSnapshot.Commands commands = this.configuration.get().restartRequired().commands();
         ConfigSnapshot.Command root = commands.root();
+        if (!root.enabled()) {
+            return;
+        }
         Command.Builder<CommandSourceStack> base = this.manager.commandBuilder(
-                root.name(), root.aliases().toArray(String[]::new)).permission(root.permission())
+                root.name(), root.aliases().toArray(String[]::new))
                 .commandDescription(Description.of(root.description()));
-        this.manager.command(base.handler(context -> ownBalance(sender(context.sender()))));
+        this.manager.command(base.permission(root.permission())
+                .handler(context -> ownBalance(sender(context.sender()))));
         registerBalance(base, commands.entries().get("balance"));
         registerPay(base, commands.entries().get("pay"));
         registerMutation(base, commands.entries().get("give"), Mutation.CREDIT);
@@ -264,14 +269,17 @@ public final class PointsCommandController {
             return;
         }
         identity(target).whenComplete((identity, identityFailure) -> main(() -> {
+            Component renderedIdentity = identity;
             if (identityFailure != null) {
-                this.feedback.send(sender, "service-unavailable", Map.of());
-            } else {
-                this.feedback.send(sender, "mutation-success", Map.of(
-                        "player", identity,
-                        "amount", this.points.formatAmount(result.finalAmount().orElseThrow()),
-                        "balance", this.points.formatAmount(result.after().orElseThrow().balance())));
+                this.plugin.getLogger().log(Level.WARNING,
+                        "Could not render player identity after a successful points mutation; using last known name",
+                        identityFailure);
+                renderedIdentity = Component.text(target.lastKnownName());
             }
+            this.feedback.send(sender, "mutation-success", Map.of(
+                    "player", renderedIdentity,
+                    "amount", this.points.formatAmount(result.finalAmount().orElseThrow()),
+                    "balance", this.points.formatAmount(result.after().orElseThrow().balance())));
         }));
     }
 

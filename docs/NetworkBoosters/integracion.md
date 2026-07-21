@@ -90,6 +90,18 @@ PlayerBoostSnapshot snapshot = boosters.getCachedOrEmpty(playerId);
 
 `getCachedOrEmpty()` NO demuestra readiness: devuelve un snapshot vacío sintético cuando no hay caché. Comprobar `isReady()` primero cuando la diferencia entre “vacío” y “todavía no cargado” importa.
 
+Para conceder una recompensa no separar readiness y cálculo. Usar una única llamada:
+
+```java
+Optional<BoostCalculation> calculation = boosters.calculateIfReady(request);
+if (calculation.isEmpty()) {
+    return; // No conceder todavía; conservar la posibilidad de reintentar.
+}
+grant(calculation.orElseThrow().finalAmount());
+```
+
+`Optional.empty()` significa que no había snapshot listo. Un cálculo presente con multiplicador `1` es un resultado neutral válido, no un fallo de readiness.
+
 ## Carga explícita
 
 - `load(playerId)` reutiliza el snapshot en caché o una carga ya en curso.

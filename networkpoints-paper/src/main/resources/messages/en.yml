@@ -96,6 +96,9 @@ unknown-player:
 reload-success:
   - type: "CHAT"
     message: "<green>The reloadable configuration was updated.</green>"
+reload-success-restart-required:
+  - type: "CHAT"
+    message: "<green>The reloadable configuration was updated.</green> <yellow>Restart required for: <restart_changes>.</yellow>"
 reload-failed:
   - type: "CHAT"
     message: "<red>The configuration is invalid; the previous version remains active.</red>"

@@ -20,7 +20,7 @@ Referencia de todos los tipos publicados por `networkboosters-api` en la versió
 | `BoosterId` | record | ID normalizado; incluye `of`. |
 | `BoosterScope` | record | Scope por tipo, juegos y servidores; incluye `WILDCARD`, `personalGlobal` y `appliesTo`. |
 | `BoosterScopeType` | enum | `PERSONAL`. |
-| `BoosterTarget` | record | Target namespaced; incluye `NETWORK_PROGRESSION_POINTS` y `of`. |
+| `BoosterTarget` | record | Target namespaced; incluye `NETWORK_POINTS` y `of`. |
 | `ConflictPolicy` | enum | `QUEUE`, `REJECT`, `REPLACE`. |
 | `OwnedBooster` | record | Cantidad positiva de un booster perteneciente a un jugador. |
 | `PermissionMode` | enum | `ALL`, `ANY`. |

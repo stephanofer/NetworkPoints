@@ -7,6 +7,6 @@ import java.util.Optional;
 public final class NeutralAwardCalculator implements AwardCalculator {
     @Override
     public Optional<AwardCalculation> calculate(AwardRequest request) {
-        return Optional.of(new AwardCalculation(request.amount(), BigDecimal.ONE, request.amount()));
+        return Optional.of(new AwardCalculation(request.amount(), BigDecimal.ONE, request.amount(), java.util.List.of()));
     }
 }

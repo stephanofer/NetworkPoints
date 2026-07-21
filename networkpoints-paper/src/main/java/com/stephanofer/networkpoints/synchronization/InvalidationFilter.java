@@ -29,6 +29,11 @@ final class InvalidationFilter {
                 new InvalidationIdentity(invalidation.operationId(), invalidation.playerId()), Boolean.TRUE) == null;
     }
 
+    void allowRetry(BalanceInvalidation invalidation) {
+        Objects.requireNonNull(invalidation, "invalidation");
+        this.seen.invalidate(new InvalidationIdentity(invalidation.operationId(), invalidation.playerId()));
+    }
+
     void close() {
         this.seen.invalidateAll();
     }

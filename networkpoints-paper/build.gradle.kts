@@ -42,6 +42,7 @@ tasks.jar {
 
 tasks.shadowJar {
     archiveClassifier.set("")
+    destinationDirectory.set(rootProject.layout.projectDirectory.dir("target"))
     duplicatesStrategy = DuplicatesStrategy.INCLUDE
     mergeServiceFiles()
     append("META-INF/io.netty.versions.properties")
@@ -60,12 +61,16 @@ tasks.shadowJar {
     relocate("com.mysql", "com.stephanofer.networkpoints.libs.mysql")
     relocate("com.google.protobuf", "com.stephanofer.networkpoints.libs.protobuf")
     relocate("com.github.benmanes.caffeine", "com.stephanofer.networkpoints.libs.caffeine")
+    relocate("org.jspecify", "com.stephanofer.networkpoints.libs.jspecify")
+    relocate("com.google.errorprone.annotations", "com.stephanofer.networkpoints.libs.errorprone.annotations")
+    relocate("org.slf4j", "com.stephanofer.networkpoints.libs.slf4j")
     relocate("io.lettuce", "com.stephanofer.networkpoints.libs.lettuce")
     relocate("redis.clients.authentication", "com.stephanofer.networkpoints.libs.redisAuthx")
     relocate("io.netty", "com.stephanofer.networkpoints.libs.netty")
     relocate("reactor", "com.stephanofer.networkpoints.libs.reactor")
     relocate("org.reactivestreams", "com.stephanofer.networkpoints.libs.reactiveStreams")
     relocate("org.incendo.cloud", "com.stephanofer.networkpoints.libs.cloud")
+    relocate("io.leangen.geantyref", "com.stephanofer.networkpoints.libs.geantyref")
 }
 
 val shadowArchive = tasks.shadowJar.flatMap { it.archiveFile }
@@ -86,9 +91,14 @@ val verifyShadowJar = tasks.register("verifyShadowJar") {
                 "com/stephanofer/networkpoints/libs/flyway/core/Flyway.class",
                 "com/stephanofer/networkpoints/libs/mysql/cj/jdbc/Driver.class",
                 "com/stephanofer/networkpoints/libs/caffeine/cache/Caffeine.class",
+                "com/stephanofer/networkpoints/libs/jspecify/annotations/Nullable.class",
+                "com/stephanofer/networkpoints/libs/errorprone/annotations/CanIgnoreReturnValue.class",
+                "com/stephanofer/networkpoints/libs/slf4j/LoggerFactory.class",
                 "com/stephanofer/networkpoints/libs/craftkit/redis/RedisClient.class",
                 "com/stephanofer/networkpoints/libs/cloud/paper/PaperCommandManager.class",
-                "db/migration/V1__create_networkpoints.sql"
+                "com/stephanofer/networkpoints/libs/geantyref/GenericTypeReflector.class",
+                "db/migration/V1__create_networkpoints.sql",
+                "db/migration/V2__create_networkpoints_operations.sql"
             )
             check(entries.containsAll(required)) {
                 "Shadow JAR is missing: ${required - entries}"
@@ -115,7 +125,13 @@ val verifyShadowJar = tasks.register("verifyShadowJar") {
                 "tools/jackson/",
                 "com/fasterxml/jackson/",
                 "com/mysql/",
-                "com/google/protobuf/"
+                "com/google/protobuf/",
+                "com/github/benmanes/caffeine/",
+                "org/jspecify/",
+                "com/google/errorprone/annotations/",
+                "org/slf4j/",
+                "org/incendo/cloud/",
+                "io/leangen/geantyref/"
             )
             check(entries.none { entry -> forbidden.any(entry::startsWith) }) {
                 "Shadow JAR contains unrelocated or externally provided dependencies"
@@ -126,4 +142,8 @@ val verifyShadowJar = tasks.register("verifyShadowJar") {
 
 tasks.build {
     dependsOn(verifyShadowJar)
+}
+
+tasks.clean {
+    delete(rootProject.layout.projectDirectory.dir("target"))
 }

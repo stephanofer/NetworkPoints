@@ -96,6 +96,9 @@ unknown-player:
 reload-success:
   - type: "CHAT"
     message: "<green>La configuración recargable fue actualizada.</green>"
+reload-success-restart-required:
+  - type: "CHAT"
+    message: "<green>La configuración recargable fue actualizada.</green> <yellow>Requieren reinicio: <restart_changes>.</yellow>"
 reload-failed:
   - type: "CHAT"
     message: "<red>La configuración es inválida; se mantuvo la versión anterior.</red>"

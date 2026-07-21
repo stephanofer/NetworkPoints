@@ -28,6 +28,7 @@ import com.stephanofer.networkpoints.placeholder.NetworkPointsExpansion;
 import com.stephanofer.networkpoints.placeholder.PointsPlaceholderRenderer;
 import com.stephanofer.networkpoints.persistence.AuditStore;
 import com.stephanofer.networkpoints.persistence.DatabaseFactory;
+import com.stephanofer.networkpoints.persistence.OperationRepository;
 import com.stephanofer.networkpoints.persistence.TransactionRepository;
 import com.stephanofer.networkpoints.payment.PaymentController;
 import com.stephanofer.networkpoints.payment.PaymentNotifications;
@@ -50,6 +51,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.TimeUnit;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -70,6 +72,8 @@ public final class NetworkPointsLifecycle implements Listener {
     private final NetworkPointsConfig configuration;
     private final PaperCommandManager.Bootstrapped<CommandSourceStack> commandManager;
     private final AtomicReference<LifecycleState> state = new AtomicReference<>(LifecycleState.NEW);
+    private final AtomicBoolean reloadInProgress = new AtomicBoolean();
+    private final PlayerPreloadGuard preloads = new PlayerPreloadGuard();
     private Database database;
     private AccountStore accountStore;
     private AuditStore auditStore;
@@ -99,9 +103,6 @@ public final class NetworkPointsLifecycle implements Listener {
         try {
             ConfigSnapshot snapshot = this.configuration.start();
             startDurableCore(snapshot);
-            if (!this.state.compareAndSet(LifecycleState.STARTING, LifecycleState.RUNNING)) {
-                return;
-            }
             this.plugin.getServer().getServicesManager().register(
                     NetworkPointsService.class, this.service, this.plugin, ServicePriority.Normal);
             this.plugin.getServer().getPluginManager().registerEvents(this, this.plugin);
@@ -113,13 +114,20 @@ public final class NetworkPointsLifecycle implements Listener {
                 "NetworkPoints durable economy started for server {}.",
                 snapshot.restartRequired().serverId()
             );
-        } catch (Exception exception) {
-            if (!this.state.compareAndSet(LifecycleState.STARTING, LifecycleState.FAILED)) {
-                return;
+            if (!this.state.compareAndSet(LifecycleState.STARTING, LifecycleState.RUNNING)) {
+                throw new IllegalStateException("Lifecycle left STARTING during startup");
             }
-            this.plugin.getComponentLogger().error("NetworkPoints could not start.", exception);
-            closeRuntime();
-            this.plugin.getServer().getPluginManager().disablePlugin(this.plugin);
+        } catch (Throwable failure) {
+            this.state.set(LifecycleState.FAILED);
+            try {
+                this.plugin.getComponentLogger().error("NetworkPoints could not start.", failure);
+            } finally {
+                try {
+                    closeRuntime();
+                } finally {
+                    this.plugin.getServer().getPluginManager().disablePlugin(this.plugin);
+                }
+            }
         }
     }
 
@@ -127,24 +135,25 @@ public final class NetworkPointsLifecycle implements Listener {
         while (true) {
             LifecycleState current = this.state.get();
             if (current == LifecycleState.STOPPED
-                    || current == LifecycleState.STOPPING
-                    || current == LifecycleState.FAILED) {
+                    || current == LifecycleState.STOPPING) {
                 return;
             }
             if (this.state.compareAndSet(current, LifecycleState.STOPPING)) {
-                if (this.service != null) {
-                    this.service.stopAcceptingMutations();
-                    this.plugin.getServer().getServicesManager().unregister(NetworkPointsService.class, this.service);
+                try {
+                    DurableNetworkPointsService currentService = this.service;
+                    if (currentService != null) {
+                        shutdownStep("service mutation shutdown", currentService::stopAcceptingMutations);
+                    }
+                    BukkitTask currentAuditTask = this.auditTask;
+                    this.auditTask = null;
+                    if (currentAuditTask != null) {
+                        shutdownStep("audit task cancellation", currentAuditTask::cancel);
+                    }
+                    awaitOperations();
+                } finally {
+                    closeRuntime();
+                    this.state.set(LifecycleState.STOPPED);
                 }
-                if (this.payments != null) {
-                    this.payments.close();
-                }
-                if (this.auditTask != null) {
-                    this.auditTask.cancel();
-                }
-                awaitOperations();
-                closeRuntime();
-                this.state.set(LifecycleState.STOPPED);
                 return;
             }
         }
@@ -168,10 +177,13 @@ public final class NetworkPointsLifecycle implements Listener {
 
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
+        java.util.UUID playerId = event.getPlayer().getUniqueId();
         BalanceCache cache = this.balanceCache;
-        if (cache != null) {
-            cache.invalidate(event.getPlayer().getUniqueId());
-        }
+        this.preloads.leave(playerId, () -> {
+            if (cache != null) {
+                cache.invalidate(playerId);
+            }
+        });
         if (this.feedback != null) {
             this.feedback.clear(event.getPlayer());
         }
@@ -204,6 +216,7 @@ public final class NetworkPointsLifecycle implements Listener {
 
         AccountRepository accounts = new AccountRepository();
         TransactionRepository transactions = new TransactionRepository();
+        OperationRepository operations = new OperationRepository();
         this.accountStore = new AccountStore(this.database, accounts);
         this.auditStore = new AuditStore(this.database, transactions, Clock.systemUTC());
         ConfigSnapshot.Cache cacheConfig = snapshot.reloadable().cache();
@@ -219,6 +232,7 @@ public final class NetworkPointsLifecycle implements Listener {
                 this.database,
                 accounts,
                 transactions,
+                operations,
                 awardCalculator,
                 snapshot.restartRequired().monetaryPolicy().maximumBalance(),
                 snapshot.restartRequired().serverId());
@@ -297,27 +311,69 @@ public final class NetworkPointsLifecycle implements Listener {
     }
 
     private void reload(CommandSender sender) {
-        try {
-            AtomicReference<LocalizedCatalog<FeedbackAction>> catalog = new AtomicReference<>();
-            ConfigSnapshot snapshot = this.configuration.reload(reloadable ->
-                    catalog.set(new FeedbackCompiler().compile(reloadable.messages())));
-            this.feedback.update(catalog.get());
-            this.payments.clearSessions();
-            this.identities.update(snapshot.reloadable().identity());
-            updatePresentation(snapshot);
-            if (this.auditTask != null) {
-                this.auditTask.cancel();
-            }
-            scheduleAuditCleanup(snapshot.reloadable().audit());
-            this.feedback.send(sender, "reload-success", Map.of(
-                    "restart_changes", net.kyori.adventure.text.Component.text(String.join(", ", snapshot.restartRequiredChanges()))));
-        } catch (Exception exception) {
-            this.plugin.getComponentLogger().warn("NetworkPoints reload rejected.", exception);
+        if (!this.reloadInProgress.compareAndSet(false, true)) {
             this.feedback.send(sender, "reload-failed", Map.of());
+            return;
+        }
+        try {
+            this.plugin.getServer().getScheduler().runTaskAsynchronously(this.plugin, () -> prepareReload(sender));
+        } catch (RuntimeException exception) {
+            rejectReload(sender, exception);
         }
     }
 
-    private void updatePresentation(ConfigSnapshot snapshot) {
+    private void prepareReload(CommandSender sender) {
+        try {
+            AtomicReference<LocalizedCatalog<FeedbackAction>> catalog = new AtomicReference<>();
+            NetworkPointsConfig.ReloadCandidate candidate = this.configuration.prepareReload(reloadable ->
+                    catalog.set(new FeedbackCompiler().compile(reloadable.messages())));
+            PresentationUpdate presentation = presentation(candidate.published());
+            this.plugin.getServer().getScheduler().runTask(this.plugin,
+                    () -> applyReload(sender, candidate, catalog.get(), presentation));
+        } catch (Exception exception) {
+            this.plugin.getServer().getScheduler().runTask(this.plugin, () -> rejectReload(sender, exception));
+        }
+    }
+
+    private void applyReload(CommandSender sender, NetworkPointsConfig.ReloadCandidate candidate,
+                             LocalizedCatalog<FeedbackAction> catalog, PresentationUpdate presentation) {
+        if (this.state.get() != LifecycleState.RUNNING) {
+            this.reloadInProgress.set(false);
+            return;
+        }
+        try {
+            ConfigSnapshot snapshot = candidate.published();
+            BukkitTask replacementAuditTask = createAuditCleanupTask(snapshot.reloadable().audit());
+            this.feedback.update(catalog);
+            this.payments.clearSessions();
+            this.identities.update(snapshot.reloadable().identity());
+            this.service.updatePresentation(presentation.parser(), presentation.formatter(),
+                    presentation.mode(), snapshot.reloadable().currency());
+            BukkitTask previousAuditTask = this.auditTask;
+            this.auditTask = replacementAuditTask;
+            if (previousAuditTask != null) {
+                previousAuditTask.cancel();
+            }
+            this.configuration.publish(candidate);
+            String message = snapshot.restartRequiredChanges().isEmpty()
+                    ? "reload-success"
+                    : "reload-success-restart-required";
+            this.feedback.send(sender, message, Map.of("restart_changes",
+                    net.kyori.adventure.text.Component.text(String.join(", ", snapshot.restartRequiredChanges()))));
+        } catch (Exception exception) {
+            rejectReload(sender, exception);
+            return;
+        }
+        this.reloadInProgress.set(false);
+    }
+
+    private void rejectReload(CommandSender sender, Exception exception) {
+        this.reloadInProgress.set(false);
+        this.plugin.getComponentLogger().warn("NetworkPoints reload rejected.", exception);
+        this.feedback.send(sender, "reload-failed", Map.of());
+    }
+
+    private PresentationUpdate presentation(ConfigSnapshot snapshot) {
         ConfigSnapshot.Reloadable reloadable = snapshot.reloadable();
         AmountParser parser = new AmountParser(java.math.BigDecimal.ZERO,
                 snapshot.restartRequired().monetaryPolicy().maximumBalance(),
@@ -326,8 +382,8 @@ public final class NetworkPointsLifecycle implements Listener {
                 .map(tier -> new CompactTier(tier.threshold(), tier.pattern(), tier.suffix(), tier.display())).toList();
         AmountFormatter formatter = new AmountFormatter(reloadable.amountFormat().groupedPattern(),
                 reloadable.amountFormat().groupingSeparator(), reloadable.amountFormat().decimalSeparator(), tiers);
-        this.service.updatePresentation(parser, formatter,
-                AmountDisplayMode.valueOf(reloadable.amountFormat().defaultMode().name()), reloadable.currency());
+        return new PresentationUpdate(parser, formatter,
+                AmountDisplayMode.valueOf(reloadable.amountFormat().defaultMode().name()));
     }
 
     private AwardCalculator awardCalculator(ConfigSnapshot.Integrations integrations) {
@@ -343,21 +399,29 @@ public final class NetworkPointsLifecycle implements Listener {
 
     private void preload(java.util.UUID playerId, String name) {
         AccountStore store = this.accountStore;
-        if (store == null || this.state.get() == LifecycleState.STOPPING || this.state.get() == LifecycleState.STOPPED) {
+        LifecycleState currentState = this.state.get();
+        if (store == null || currentState == LifecycleState.STOPPING || currentState == LifecycleState.STOPPED
+                || currentState == LifecycleState.FAILED) {
             return;
         }
+        long generation = this.preloads.begin(playerId);
         store.ensureAccount(playerId, name).thenAccept(account -> {
             BalanceCache cache = this.balanceCache;
-            if (cache == null || this.state.get() != LifecycleState.RUNNING
-                    || this.plugin.getServer().getPlayer(playerId) == null) {
+            if (cache == null) {
                 return;
             }
-            var snapshot = cache.publish(account.snapshot());
+            var published = new AtomicReference<com.stephanofer.networkpoints.api.balance.BalanceSnapshot>();
+            if (!this.preloads.runIfCurrent(playerId, generation,
+                    () -> published.set(cache.publish(account.snapshot())))) {
+                return;
+            }
             this.plugin.getServer().getScheduler().runTask(this.plugin, () -> {
                 if (this.state.get() == LifecycleState.RUNNING
+                        && this.preloads.isCurrent(playerId, generation)
                         && this.plugin.getServer().getPlayer(playerId) != null
-                        && cache.getIfPresent(playerId).filter(snapshot::equals).isPresent()) {
-                    this.plugin.getServer().getPluginManager().callEvent(new PlayerPointsReadyEvent(snapshot));
+                        && published.get() != null) {
+                    cache.getIfPresent(playerId).ifPresent(snapshot -> this.plugin.getServer()
+                            .getPluginManager().callEvent(new PlayerPointsReadyEvent(snapshot)));
                 }
             });
         }).exceptionally(failure -> {
@@ -379,52 +443,54 @@ public final class NetworkPointsLifecycle implements Listener {
     }
 
     private void closeRuntime() {
-        if (this.expansion != null) {
-            this.expansion.unregister();
-            this.expansion = null;
+        this.preloads.clear();
+        BukkitTask currentAuditTask = this.auditTask;
+        this.auditTask = null;
+        if (currentAuditTask != null) shutdownStep("audit task cancellation", currentAuditTask::cancel);
+        DurableNetworkPointsService currentService = this.service;
+        this.service = null;
+        if (currentService != null) {
+            shutdownStep("service mutation shutdown", currentService::stopAcceptingMutations);
+            shutdownStep("service unregistration", () -> this.plugin.getServer().getServicesManager()
+                    .unregister(NetworkPointsService.class, currentService));
         }
-        if (this.payments != null) {
-            this.payments.close();
-            this.payments = null;
-        }
-        if (this.paymentNotifications != null) {
-            this.paymentNotifications.close();
-            this.paymentNotifications = null;
-        }
-        if (this.feedback != null) {
-            this.feedback.close();
-            this.feedback = null;
-        }
-        if (this.identities != null) {
-            this.identities.close();
-            this.identities = null;
-        }
-        if (this.redisStatus != null) {
-            this.redisStatus.close();
-            this.redisStatus = null;
-        }
-        if (this.synchronization != null) {
-            this.synchronization.close();
-            this.synchronization = null;
-        }
-        if (this.redis != null) {
-            try {
-                this.redis.close();
-            } catch (RuntimeException exception) {
-                this.plugin.getComponentLogger().error("NetworkPoints Redis shutdown failed.", exception);
-            }
-            this.redis = null;
-        }
+        NetworkPointsExpansion currentExpansion = this.expansion;
+        this.expansion = null;
+        if (currentExpansion != null) shutdownStep("PlaceholderAPI expansion shutdown", currentExpansion::unregister);
+        PaymentController currentPayments = this.payments;
+        this.payments = null;
+        if (currentPayments != null) shutdownStep("payments shutdown", currentPayments::close);
+        PaymentNotifications currentNotifications = this.paymentNotifications;
+        this.paymentNotifications = null;
+        if (currentNotifications != null) shutdownStep("payment notification shutdown", currentNotifications::close);
+        FeedbackService currentFeedback = this.feedback;
+        this.feedback = null;
+        if (currentFeedback != null) shutdownStep("feedback shutdown", currentFeedback::close);
+        PlayerIdentityService currentIdentities = this.identities;
+        this.identities = null;
+        if (currentIdentities != null) shutdownStep("identity shutdown", currentIdentities::close);
+        RedisStatusRegistration currentRedisStatus = this.redisStatus;
+        this.redisStatus = null;
+        if (currentRedisStatus != null) shutdownStep("Redis status shutdown", currentRedisStatus::close);
+        PointsSynchronization currentSynchronization = this.synchronization;
+        this.synchronization = null;
+        if (currentSynchronization != null) shutdownStep("Redis synchronization shutdown", currentSynchronization::close);
+        RedisClient currentRedis = this.redis;
+        this.redis = null;
+        if (currentRedis != null) shutdownStep("Redis shutdown", currentRedis::close);
         closeDatabase();
-        if (this.balanceCache != null) {
-            this.balanceCache.close();
-            this.balanceCache = null;
-        }
+        BalanceCache currentCache = this.balanceCache;
+        this.balanceCache = null;
+        if (currentCache != null) shutdownStep("balance cache shutdown", currentCache::close);
     }
 
     private void scheduleAuditCleanup(ConfigSnapshot.Audit audit) {
+        this.auditTask = createAuditCleanupTask(audit);
+    }
+
+    private BukkitTask createAuditCleanupTask(ConfigSnapshot.Audit audit) {
         long intervalTicks = Math.multiplyExact(audit.cleanupIntervalHours(), 72_000L);
-        this.auditTask = this.plugin.getServer().getScheduler().runTaskTimer(
+        return this.plugin.getServer().getScheduler().runTaskTimer(
                 this.plugin, () -> cleanupAuditBatch(audit), intervalTicks, intervalTicks);
     }
 
@@ -445,11 +511,22 @@ public final class NetworkPointsLifecycle implements Listener {
         Database current = this.database;
         this.database = null;
         if (current != null) {
+            shutdownStep("database shutdown", current::close);
+        }
+    }
+
+    private void shutdownStep(String resource, Runnable action) {
+        try {
+            action.run();
+        } catch (Throwable failure) {
             try {
-                current.close();
-            } catch (RuntimeException exception) {
-                this.plugin.getComponentLogger().error("NetworkPoints database shutdown failed.", exception);
+                this.plugin.getComponentLogger().error("NetworkPoints {} failed.", resource, failure);
+            } catch (Throwable ignored) {
+                // Shutdown must continue even if logging infrastructure is already unavailable.
             }
         }
+    }
+
+    private record PresentationUpdate(AmountParser parser, AmountFormatter formatter, AmountDisplayMode mode) {
     }
 }

@@ -35,10 +35,7 @@ public final class DurableNetworkPointsService implements NetworkPointsService {
     private final EconomicEngine engine;
     private final BalanceCache balances;
     private final PostCommitCoordinator postCommit;
-    private volatile AmountParser parser;
-    private volatile AmountFormatter formatter;
-    private volatile AmountDisplayMode defaultDisplayMode;
-    private volatile ConfigSnapshot.Currency currency;
+    private volatile Presentation presentation;
     private final AtomicBoolean acceptingMutations = new AtomicBoolean(true);
     private final Set<CompletableFuture<?>> inFlight = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Object mutationGate = new Object();
@@ -54,10 +51,7 @@ public final class DurableNetworkPointsService implements NetworkPointsService {
         this.engine = Objects.requireNonNull(engine, "engine");
         this.balances = Objects.requireNonNull(balances, "balances");
         this.postCommit = Objects.requireNonNull(postCommit, "postCommit");
-        this.parser = Objects.requireNonNull(parser, "parser");
-        this.formatter = Objects.requireNonNull(formatter, "formatter");
-        this.defaultDisplayMode = Objects.requireNonNull(defaultDisplayMode, "defaultDisplayMode");
-        this.currency = Objects.requireNonNull(currency, "currency");
+        this.presentation = new Presentation(parser, formatter, defaultDisplayMode, currency);
     }
 
     @Override
@@ -120,28 +114,25 @@ public final class DurableNetworkPointsService implements NetworkPointsService {
 
     @Override
     public Component formatAmount(BigDecimal amount) {
-        ConfigSnapshot.Currency current = this.currency;
-        return MiniMessage.miniMessage().deserialize(current.displayFormat(),
-                Placeholder.component("amount", this.formatter.formatComponent(amount, this.defaultDisplayMode)),
-                Placeholder.unparsed("symbol", current.symbol()));
+        Presentation current = this.presentation;
+        return MiniMessage.miniMessage().deserialize(current.currency().displayFormat(),
+                Placeholder.component("amount", current.formatter().formatComponent(amount, current.defaultDisplayMode())),
+                Placeholder.unparsed("symbol", current.currency().symbol()));
     }
 
     @Override
     public String formatAmountPlain(BigDecimal amount, AmountDisplayMode mode) {
-        return this.formatter.format(amount, mode);
+        return this.presentation.formatter().format(amount, mode);
     }
 
     @Override
     public AmountParseResult parseAmount(String input) {
-        return this.parser.parse(input);
+        return this.presentation.parser().parse(input);
     }
 
     public void updatePresentation(AmountParser parser, AmountFormatter formatter, AmountDisplayMode defaultDisplayMode,
                                    ConfigSnapshot.Currency currency) {
-        this.parser = Objects.requireNonNull(parser, "parser");
-        this.formatter = Objects.requireNonNull(formatter, "formatter");
-        this.defaultDisplayMode = Objects.requireNonNull(defaultDisplayMode, "defaultDisplayMode");
-        this.currency = Objects.requireNonNull(currency, "currency");
+        this.presentation = new Presentation(parser, formatter, defaultDisplayMode, currency);
     }
 
     public void stopAcceptingMutations() {
@@ -176,5 +167,15 @@ public final class DurableNetworkPointsService implements NetworkPointsService {
                 MutationStatus.SERVICE_UNAVAILABLE, type, operationId, playerId,
                 Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
                 Optional.empty(), false));
+    }
+
+    private record Presentation(AmountParser parser, AmountFormatter formatter,
+                                AmountDisplayMode defaultDisplayMode, ConfigSnapshot.Currency currency) {
+        private Presentation {
+            Objects.requireNonNull(parser, "parser");
+            Objects.requireNonNull(formatter, "formatter");
+            Objects.requireNonNull(defaultDisplayMode, "defaultDisplayMode");
+            Objects.requireNonNull(currency, "currency");
+        }
     }
 }

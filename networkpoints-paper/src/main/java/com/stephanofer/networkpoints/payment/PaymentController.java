@@ -20,6 +20,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
+import java.util.logging.Level;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
 import org.bukkit.entity.Player;
@@ -60,7 +61,7 @@ public final class PaymentController implements AutoCloseable {
             return;
         }
         if (!this.feedback.isReady(sender)) {
-            this.feedback.send(sender, "pay-settings-not-ready", Map.of());
+            this.feedback.sendImmediate(sender, "pay-settings-not-ready", Map.of());
             return;
         }
         ConfigSnapshot.Payments config = this.configuration.get().reloadable().payments();
@@ -189,6 +190,13 @@ public final class PaymentController implements AutoCloseable {
         if (!this.open.get()) {
             return;
         }
+        ConfigSnapshot.Payments config = this.configuration.get().reloadable().payments();
+        PaymentPolicy.Decision decision = this.policy.evaluate(config, sender.getUniqueId(), recipient.playerId(),
+                amount, this.plugin.getServer().getPlayer(recipient.playerId()) != null);
+        if (!decision.accepted()) {
+            reject(sender, decision.status(), config);
+            return;
+        }
         MutationContext context = new MutationContext(operationId, PAYMENT_SOURCE,
                 Optional.of(sender.getUniqueId()), Optional.of(recipient.lastKnownName()));
         this.points.transfer(new TransferRequest(sender.getUniqueId(), recipient.playerId(), amount, context))
@@ -214,7 +222,7 @@ public final class PaymentController implements AutoCloseable {
         if (!result.replayed()) {
             this.notifications.publish(new PaymentNotification(result.operationId(),
                     this.configuration.get().restartRequired().serverId(), result.senderId(),
-                    result.recipientId(), result.amount().orElseThrow()));
+                    sender.getName(), result.recipientId(), result.amount().orElseThrow()));
         }
         if (!sender.isOnline()) {
             return;
@@ -227,13 +235,16 @@ public final class PaymentController implements AutoCloseable {
             if (!sender.isOnline()) {
                 return;
             }
+            Component renderedIdentity = rendered;
             if (identityFailure != null) {
-                this.feedback.send(sender, "service-unavailable", Map.of());
-                return;
+                this.plugin.getLogger().log(Level.WARNING,
+                        "Could not render recipient identity after a successful payment; using last known name",
+                        identityFailure);
+                renderedIdentity = Component.text(recipient.lastKnownName());
             }
             this.feedback.send(sender, "pay-sent", Map.of(
                     "amount", this.points.formatAmount(result.amount().orElseThrow()),
-                    "recipient", rendered,
+                    "recipient", renderedIdentity,
                     "balance", this.points.formatAmount(result.senderAfter().orElseThrow().balance())));
         }));
     }

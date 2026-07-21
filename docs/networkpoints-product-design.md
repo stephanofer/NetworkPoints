@@ -311,7 +311,21 @@ INDEX (created_at)
 
 Una transferencia generará dos entradas con el mismo `operation_id`: una para el débito y otra para el crédito. Ambas se insertarán junto con los dos cambios de saldo en una sola transacción.
 
-### 6.3 Atomicidad
+### 6.3 Registro de operaciones idempotentes
+
+Tabla técnica: `networkpoints_operations`.
+
+El historial y la idempotencia tienen ciclos de vida diferentes. El historial se elimina según su retención, pero una operación confirmada no puede volver a ser ejecutable después de esa limpieza. Por eso, cada mutación confirmada persistirá en la misma transacción un registro técnico compacto con:
+
+- `operation_id` como clave primaria global.
+- Identidad completa de la solicitud, incluidos `gameId` y `serverId` para `award`.
+- Snapshots y desglose necesarios para reconstruir el resultado confirmado.
+- Sin retención automática en la primera versión.
+- Los boosters aplicados por un `award` se normalizan en `networkpoints_operation_boosters`, ordenados por operación, para conservar activation ID, booster ID, grupo y multiplicador sin serializaciones opacas.
+
+Esta tabla no es historial social ni una tercera economía. No participa en consultas de jugadores ni en el hot path de lectura; existe únicamente para conservar la garantía de idempotencia durante toda la vida del dato.
+
+### 6.4 Atomicidad
 
 Las transferencias bloquearán ambas cuentas mediante `SELECT ... FOR UPDATE`, ordenadas siempre por UUID binario para reducir deadlocks.
 
@@ -326,7 +340,7 @@ CraftKit Database proporcionará:
 
 Se utilizará `TransactionRetryPolicy.mysqlTransient()`. El callback SQL no ejecutará feedback, eventos, Redis ni ningún otro side effect externo porque puede ejecutarse más de una vez.
 
-### 6.4 Idempotencia
+### 6.5 Idempotencia
 
 Cada mutación pública tendrá un `operationId`.
 
@@ -563,21 +577,21 @@ Todas las mutaciones serán asíncronas. Los callbacks de los futures no tendrá
 NetworkBoosters ya define el target requerido:
 
 ```java
-BoosterTarget.NETWORK_PROGRESSION_POINTS
+BoosterTarget.NETWORK_POINTS
 ```
 
 El flujo de `award` será:
 
 1. Verificar que NetworkBoosters esté disponible y listo.
 2. Construir `BoostRequest`.
-3. Utilizar `NETWORK_PROGRESSION_POINTS`.
+3. Utilizar `NETWORK_POINTS` (`network_points:points`).
 4. Proporcionar `playerId`, `baseAmount`, `gameId` y `serverId`.
-5. Ejecutar `calculate`, que es síncrono, thread-safe y libre de I/O.
+5. Ejecutar `calculateIfReady`, que captura el snapshot una sola vez y es síncrono, thread-safe y libre de I/O.
 6. Redondear el resultado final una vez.
 7. Persistir cantidad base, multiplicador, cantidad final y boosters aplicados.
 8. Devolver el desglose al consumidor.
 
-Si la integración está habilitada y el snapshot del jugador no está listo, no se concederá silenciosamente la cantidad neutral. Se devolverá `BOOSTER_STATE_NOT_READY` para permitir un reintento seguro.
+Si `calculateIfReady` devuelve vacío, el snapshot del jugador no está listo: no se concederá silenciosamente la cantidad neutral y se devolverá `BOOSTER_STATE_NOT_READY` para permitir un reintento seguro. Un resultado presente con multiplicador `1` es un cálculo neutral legítimo.
 
 Los comandos administrativos, pagos, compensaciones y reembolsos nunca aplicarán boosters.
 
@@ -842,6 +856,7 @@ Reglas:
 - Los nombres no se interpolan como MiniMessage raw.
 - Un idioma faltante utiliza el idioma predeterminado.
 - Una recarga inválida conserva el snapshot anterior.
+- La lectura y validación de archivos durante `/points reload` se ejecuta fuera del main thread; la publicación del snapshot validado se aplica en main thread.
 - Las bossbars temporales se limpian en quit y disable.
 - Dialog no será una acción genérica porque requiere comportamiento y seguridad específicos.
 
@@ -979,7 +994,8 @@ NetworkPoints/
             │   ├── es.yml
             │   └── en.yml
             └── db/migration/
-                └── V1__create_networkpoints.sql
+                ├── V1__create_networkpoints.sql
+                └── V2__create_networkpoints_operations.sql
 ```
 
 La estructura será feature-first. No se crearán carpetas genéricas como `manager`, `util`, `model` o `handler` que mezclen responsabilidades no relacionadas.
@@ -1081,6 +1097,7 @@ Las siguientes verificaciones serán manuales:
 - Redis desconectado.
 - MySQL desconectado.
 - Historial y limpieza.
+- Limpieza del historial seguida de replay del mismo `operationId`.
 
 ## 23. Edge cases obligatorios
 
@@ -1144,11 +1161,12 @@ Las siguientes verificaciones serán manuales:
 - [ ] Los pagos grandes utilizan un dialog nativo y seguro.
 - [ ] Los placeholders nunca hacen I/O.
 - [ ] El historial se escribe en la misma transacción que el saldo.
+- [ ] La retención del historial no elimina la memoria de idempotencia.
 - [ ] No existe ninguna funcionalidad de leaderboard.
 - [ ] La suite automatizada contiene únicamente tests unitarios JUnit.
 
 ## 26. Resultado final
 
-NetworkPoints tendrá dos tablas de negocio, una caché local versionada, transacciones MySQL pequeñas, Redis como optimización y una API explícita. La complejidad estará concentrada únicamente donde evita pérdida, duplicación o corrupción de puntos.
+NetworkPoints tendrá dos tablas de negocio, un registro técnico de idempotencia con el desglose de boosters aplicado, una caché local versionada, transacciones MySQL pequeñas, Redis como optimización y una API explícita. La complejidad estará concentrada únicamente donde evita pérdida, duplicación o corrupción de puntos.
 
 Este documento constituye la especificación aprobada para iniciar la implementación formal del proyecto.

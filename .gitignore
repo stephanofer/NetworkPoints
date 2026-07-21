@@ -1,7 +1,10 @@
 # Build outputs
 .gradle/
 **/build/
+**/bin/
 out/
+target/
+target-api/
 
 # IDE and editor files
 .idea/
@@ -14,4 +17,3 @@ out/
 # OS files
 .DS_Store
 Thumbs.db
-

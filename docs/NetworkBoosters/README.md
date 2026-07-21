@@ -35,6 +35,7 @@ NetworkBoosters administra inventarios de boosters personales, activaciones, col
 - Declarar NetworkBoosters como dependencia requerida y cargar la API con `compileOnly`.
 - Obtener `NetworkBoostersService` desde `ServicesManager`; no instanciar implementaciones.
 - Esperar `PlayerBoostersReadyEvent` o comprobar `isReady(playerId)` antes de usar estado o mutaciones.
+- Usar `calculateIfReady(request)` cuando una recompensa deba distinguir entre estado no listo y un cálculo neutral válido.
 - Tratar todos los snapshots y modelos como valores inmutables.
 - Evaluar siempre el `status()` de los resultados; un `CompletableFuture` completado normalmente no implica éxito de negocio.
 - No asumir el hilo de finalización de un future. Volver al hilo principal antes de usar API Bukkit no thread-safe.
@@ -43,6 +44,6 @@ NetworkBoosters administra inventarios de boosters personales, activaciones, col
 
 ## Alcance
 
-La versión 1 solo expone boosters de scope `PERSONAL`. El único target con consumidor incorporado es `network_progression:points`; otros targets son válidos, pero requieren que otro plugin invoque `calculate(...)` al conceder su recurso.
+La versión 1 solo expone boosters de scope `PERSONAL`. El único target con consumidor incorporado es `network_points:points`; otros targets son válidos, pero requieren que otro plugin invoque la API de cálculo al conceder su recurso.
 
 Los documentos [Diseño final](../diseno-final-networkboosters.md) y [Plan de trabajo](../plan-de-trabajo-networkboosters.md) conservan el contexto de diseño e implementación. Esta carpeta describe el comportamiento efectivo de la versión terminada y prevalece para integraciones.

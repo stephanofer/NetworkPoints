@@ -30,6 +30,11 @@ public final class NetworkPointsConfig {
 
     public ConfigSnapshot reload(Consumer<ConfigSnapshot.Reloadable> validator)
             throws IOException, ConfigValidationException {
+        return publish(prepareReload(validator));
+    }
+
+    public ReloadCandidate prepareReload(Consumer<ConfigSnapshot.Reloadable> validator)
+            throws IOException, ConfigValidationException {
         ConfigSnapshot previous = snapshot();
         ConfigSnapshot candidate = loader.loadCandidate();
         validator.accept(candidate.reloadable());
@@ -38,8 +43,15 @@ public final class NetworkPointsConfig {
                 candidate.reloadable(),
                 restartRequiredChanges(previous.restartRequired(), candidate.restartRequired())
         );
-        active.set(published);
-        return published;
+        return new ReloadCandidate(previous, published);
+    }
+
+    public ConfigSnapshot publish(ReloadCandidate candidate) {
+        Objects.requireNonNull(candidate, "candidate");
+        if (!this.active.compareAndSet(candidate.previous(), candidate.published())) {
+            throw new IllegalStateException("Configuration changed while reload was being prepared");
+        }
+        return candidate.published();
     }
 
     private static List<String> restartRequiredChanges(
@@ -74,5 +86,12 @@ public final class NetworkPointsConfig {
             throw new IllegalStateException("Configuration has not started");
         }
         return snapshot;
+    }
+
+    public record ReloadCandidate(ConfigSnapshot previous, ConfigSnapshot published) {
+        public ReloadCandidate {
+            Objects.requireNonNull(previous, "previous");
+            Objects.requireNonNull(published, "published");
+        }
     }
 }

@@ -62,7 +62,7 @@ config-version: 1
 
 id: personal_points_x2
 enabled: true
-target: network_progression:points
+target: network_points:points
 multiplier: 2.0
 duration: 2h
 
@@ -105,7 +105,7 @@ Restricciones adicionales:
 - Transferencia y sus límites son obligatorios aunque esté deshabilitada.
 - Materiales usan IDs mayúsculos con `_`; los tres tienen defaults si se omiten.
 - `custom-model-data <= 0` significa ausente.
-- Un target distinto de `network_progression:points` genera warning, no error.
+- Un target distinto de `network_points:points` genera warning, no error.
 
 ## Reload
 

@@ -43,5 +43,11 @@ public record AwardRequest(
         if (value.isBlank()) {
             throw new IllegalArgumentException(name + " must not be blank");
         }
+        if (value.length() > 64) {
+            throw new IllegalArgumentException(name + " must not exceed 64 characters");
+        }
+        if (!value.chars().allMatch(character -> character >= 0x21 && character <= 0x7e)) {
+            throw new IllegalArgumentException(name + " must contain printable ASCII characters only");
+        }
     }
 }

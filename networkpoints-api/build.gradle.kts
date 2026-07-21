@@ -14,6 +14,14 @@ java {
     withJavadocJar()
 }
 
+tasks.jar {
+    destinationDirectory.set(rootProject.layout.projectDirectory.dir("target-api"))
+}
+
+tasks.clean {
+    delete(rootProject.layout.projectDirectory.dir("target-api"))
+}
+
 publishing {
     publications {
         create<MavenPublication>("api") {

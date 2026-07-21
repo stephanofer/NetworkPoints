@@ -31,7 +31,7 @@ No leer ni escribir las tablas desde plugins consumidores. Hacerlo omite invaria
 
 Existe un snapshot inmutable por jugador listo. Las cargas concurrentes se coalescen. Una publicación solo reemplaza estado si su revisión es mayor; completar una carga después de `PlayerQuitEvent` no repuebla la caché de esa sesión.
 
-`getCachedOrEmpty()` es una conveniencia neutral, no una consulta durable. `calculate(...)` nunca carga estado.
+`getCachedOrEmpty()` es una conveniencia neutral, no una consulta durable. Los métodos de cálculo nunca cargan estado. `calculateIfReady(...)` adquiere el snapshot una sola vez y devuelve vacío si no está disponible, evitando separar readiness y cálculo.
 
 ## Redis y modo degradado
 
@@ -80,7 +80,7 @@ Al apagar, el servicio se desregistra antes de cerrar coordinadores, caché, Red
 
 | Situación | Comportamiento |
 |---|---|
-| Jugador aún no cargado | Estado tipado `PLAYER_NOT_READY`; cálculo neutral. |
+| Jugador aún no cargado | Estado tipado `PLAYER_NOT_READY`; `calculateIfReady(...)` vacío y `calculate(...)` neutral. |
 | MySQL falla al iniciar | El plugin se deshabilita. |
 | MySQL falla durante mutación | `SERVICE_UNAVAILABLE`; se registra causa. |
 | Redis falla | Operación local continúa; reconciliación repara convergencia. |

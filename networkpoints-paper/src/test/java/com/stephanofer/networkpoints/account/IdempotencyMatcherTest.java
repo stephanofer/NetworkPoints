@@ -3,11 +3,11 @@ package com.stephanofer.networkpoints.account;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.stephanofer.networkpoints.api.balance.BalanceSnapshot;
 import com.stephanofer.networkpoints.api.source.MutationContext;
-import com.stephanofer.networkpoints.persistence.TransactionKind;
-import com.stephanofer.networkpoints.persistence.TransactionRecord;
+import com.stephanofer.networkpoints.persistence.OperationRecord;
+import com.stephanofer.networkpoints.persistence.OperationType;
 import java.math.BigDecimal;
-import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import net.kyori.adventure.key.Key;
@@ -23,31 +23,36 @@ final class IdempotencyMatcherTest {
     void compatibleReplayMatchesEveryPersistedRequestField() {
         MutationContext context = context(Key.key("hera:test"), Optional.of(ACTOR_ID), Optional.of("match-7"));
 
-        assertTrue(IdempotencyMatcher.matches(record(), 0, ACCOUNT_ID, Optional.empty(),
-                TransactionKind.CREDIT, new BigDecimal("10.0"), context));
+        assertTrue(IdempotencyMatcher.matches(record(), OperationType.AWARD, ACCOUNT_ID, Optional.empty(),
+                new BigDecimal("10.0"), context, Optional.of("skywars"), Optional.of("skywars-1")));
     }
 
     @Test
     void changedEconomicOrAuditIdentityConflicts() {
-        TransactionRecord record = record();
+        OperationRecord record = record();
+        MutationContext context = context(Key.key("hera:test"), Optional.of(ACTOR_ID), Optional.of("match-7"));
 
-        assertFalse(IdempotencyMatcher.matches(record, 0, ACCOUNT_ID, Optional.empty(),
-                TransactionKind.CREDIT, new BigDecimal("10.01"), context(Key.key("hera:test"), Optional.of(ACTOR_ID), Optional.of("match-7"))));
-        assertFalse(IdempotencyMatcher.matches(record, 0, ACCOUNT_ID, Optional.empty(),
-                TransactionKind.DEBIT, new BigDecimal("10.00"), context(Key.key("hera:test"), Optional.of(ACTOR_ID), Optional.of("match-7"))));
-        assertFalse(IdempotencyMatcher.matches(record, 0, ACCOUNT_ID, Optional.empty(),
-                TransactionKind.CREDIT, new BigDecimal("10.00"), context(Key.key("hera:other"), Optional.of(ACTOR_ID), Optional.of("match-7"))));
-        assertFalse(IdempotencyMatcher.matches(record, 0, ACCOUNT_ID, Optional.empty(),
-                TransactionKind.CREDIT, new BigDecimal("10.00"), context(Key.key("hera:test"), Optional.empty(), Optional.of("match-7"))));
+        assertFalse(IdempotencyMatcher.matches(record, OperationType.AWARD, ACCOUNT_ID, Optional.empty(),
+                new BigDecimal("10.01"), context, Optional.of("skywars"), Optional.of("skywars-1")));
+        assertFalse(IdempotencyMatcher.matches(record, OperationType.CREDIT, ACCOUNT_ID, Optional.empty(),
+                new BigDecimal("10.00"), context, Optional.empty(), Optional.empty()));
+        assertFalse(IdempotencyMatcher.matches(record, OperationType.AWARD, ACCOUNT_ID, Optional.empty(),
+                new BigDecimal("10.00"), context(Key.key("hera:other"), Optional.of(ACTOR_ID), Optional.of("match-7")),
+                Optional.of("skywars"), Optional.of("skywars-1")));
+        assertFalse(IdempotencyMatcher.matches(record, OperationType.AWARD, ACCOUNT_ID, Optional.empty(),
+                new BigDecimal("10.00"), context, Optional.of("bedwars"), Optional.of("skywars-1")));
+        assertFalse(IdempotencyMatcher.matches(record, OperationType.AWARD, ACCOUNT_ID, Optional.empty(),
+                new BigDecimal("10.00"), context, Optional.of("skywars"), Optional.of("skywars-2")));
     }
 
-    private static TransactionRecord record() {
-        return new TransactionRecord(
-                1L, OPERATION_ID, 0, ACCOUNT_ID, Optional.empty(), TransactionKind.CREDIT,
-                new BigDecimal("10.00"), Optional.of(new BigDecimal("10.00")),
-                Optional.of(new BigDecimal("1.00000000")), new BigDecimal("5.00"),
-                new BigDecimal("15.00"), 4L, 5L, Optional.of(ACTOR_ID), "hera:test",
-                Optional.of("match-7"), "lobby-1", Instant.parse("2026-07-21T00:00:00Z"));
+    private static OperationRecord record() {
+        BalanceSnapshot before = new BalanceSnapshot(ACCOUNT_ID, new BigDecimal("5.00"), 4L);
+        BalanceSnapshot after = new BalanceSnapshot(ACCOUNT_ID, new BigDecimal("15.00"), 5L);
+        return new OperationRecord(OPERATION_ID, OperationType.AWARD, ACCOUNT_ID, Optional.empty(),
+                new BigDecimal("10.00"), context(Key.key("hera:test"), Optional.of(ACTOR_ID), Optional.of("match-7")),
+                Optional.of("skywars"), Optional.of("skywars-1"), before, after, Optional.empty(), Optional.empty(),
+                new BigDecimal("10.00"), new BigDecimal("10.00"), new BigDecimal("1.00000000"),
+                new BigDecimal("10.00"), java.util.List.of());
     }
 
     private static MutationContext context(Key source, Optional<UUID> actor, Optional<String> reference) {

@@ -18,7 +18,9 @@ import com.stephanofer.networkpoints.api.result.MutationType;
 import com.stephanofer.networkpoints.api.result.TransferResult;
 import com.stephanofer.networkpoints.api.source.MutationContext;
 import com.stephanofer.networkpoints.persistence.TransactionKind;
-import com.stephanofer.networkpoints.persistence.TransactionRecord;
+import com.stephanofer.networkpoints.persistence.OperationRecord;
+import com.stephanofer.networkpoints.persistence.OperationRepository;
+import com.stephanofer.networkpoints.persistence.OperationType;
 import com.stephanofer.networkpoints.persistence.TransactionRepository;
 import com.stephanofer.networkpoints.persistence.TransactionWrite;
 import java.math.BigDecimal;
@@ -43,6 +45,7 @@ public final class EconomicEngine {
     private final Database database;
     private final AccountRepository accounts;
     private final TransactionRepository transactions;
+    private final OperationRepository operations;
     private final AwardCalculator awards;
     private final BigDecimal maximumBalance;
     private final String serverId;
@@ -51,12 +54,14 @@ public final class EconomicEngine {
             Database database,
             AccountRepository accounts,
             TransactionRepository transactions,
+            OperationRepository operations,
             AwardCalculator awards,
             BigDecimal maximumBalance,
             String serverId) {
         this.database = Objects.requireNonNull(database, "database");
         this.accounts = Objects.requireNonNull(accounts, "accounts");
         this.transactions = Objects.requireNonNull(transactions, "transactions");
+        this.operations = Objects.requireNonNull(operations, "operations");
         this.awards = Objects.requireNonNull(awards, "awards");
         this.maximumBalance = Objects.requireNonNull(maximumBalance, "maximumBalance");
         this.serverId = Objects.requireNonNull(serverId, "serverId");
@@ -66,9 +71,7 @@ public final class EconomicEngine {
         Objects.requireNonNull(request, "request");
         CompletableFuture<MutationResult> attempt = this.database.transaction(MUTATION_OPTIONS,
                 connection -> award(connection, request));
-        SingleCommand command = new SingleCommand(
-                request.playerId(), request.amount(), request.context(), MutationType.AWARD, TransactionKind.AWARD);
-        return recoverSingle(command, attempt);
+        return recoverAward(request, attempt);
     }
 
     public CompletableFuture<MutationResult> credit(CreditRequest request) {
@@ -111,9 +114,9 @@ public final class EconomicEngine {
             return rejected(command, MutationStatus.ACCOUNT_NOT_FOUND, Optional.empty());
         }
 
-        List<TransactionRecord> existing = this.transactions.findOperation(connection, command.context().operationId());
-        if (!existing.isEmpty()) {
-            return replaySingle(command, existing);
+        Optional<OperationRecord> existing = this.operations.find(connection, command.context().operationId());
+        if (existing.isPresent()) {
+            return replaySingle(command, existing.orElseThrow());
         }
 
         EconomicDecisions.Decision decision = switch (command.type()) {
@@ -141,6 +144,7 @@ public final class EconomicEngine {
                 after,
                 command.context(),
                 this.serverId));
+        this.operations.insert(connection, operation(command, account.snapshot(), after, decision.delta()));
         return successful(command, account.snapshot(), after, decision.delta(), false);
     }
 
@@ -152,9 +156,9 @@ public final class EconomicEngine {
             return rejected(command, MutationStatus.ACCOUNT_NOT_FOUND, Optional.empty());
         }
 
-        List<TransactionRecord> existing = this.transactions.findOperation(connection, request.context().operationId());
-        if (!existing.isEmpty()) {
-            return replaySingle(command, existing);
+        Optional<OperationRecord> existing = this.operations.find(connection, request.context().operationId());
+        if (existing.isPresent()) {
+            return replayAward(request, existing.orElseThrow());
         }
 
         Optional<AwardCalculation> calculated = this.awards.calculate(request);
@@ -173,6 +177,11 @@ public final class EconomicEngine {
                 request.context().operationId(), 0, request.playerId(), Optional.empty(), TransactionKind.AWARD,
                 decision.delta(), award.baseAmount(), award.multiplier(), account.snapshot(), after,
                 request.context(), this.serverId));
+        this.operations.insert(connection, new OperationRecord(
+                request.context().operationId(), OperationType.AWARD, request.playerId(), Optional.empty(),
+                request.amount(), request.context(), Optional.of(request.gameId()), Optional.of(request.serverId()),
+                account.snapshot(), after, Optional.empty(), Optional.empty(), decision.delta(), award.baseAmount(),
+                award.multiplier(), award.finalAmount(), award.appliedBoosts()));
         return successfulAward(command, account.snapshot(), after, award, false);
     }
 
@@ -185,9 +194,9 @@ public final class EconomicEngine {
             return rejectedTransfer(request, MutationStatus.ACCOUNT_NOT_FOUND);
         }
 
-        List<TransactionRecord> existing = this.transactions.findOperation(connection, request.context().operationId());
-        if (!existing.isEmpty()) {
-            return replayTransfer(request, existing);
+        Optional<OperationRecord> existing = this.operations.find(connection, request.context().operationId());
+        if (existing.isPresent()) {
+            return replayTransfer(request, existing.orElseThrow());
         }
         if (sender.snapshot().balance().compareTo(request.amount()) < 0) {
             return rejectedTransfer(request, MutationStatus.INSUFFICIENT_FUNDS);
@@ -208,72 +217,100 @@ public final class EconomicEngine {
                 request.context().operationId(), 1, request.recipientId(), Optional.of(request.senderId()),
                 TransactionKind.TRANSFER_CREDIT, request.amount(), request.amount(), DIRECT_MULTIPLIER,
                 recipient.snapshot(), recipientAfter, request.context(), this.serverId));
+        this.operations.insert(connection, new OperationRecord(
+                request.context().operationId(), OperationType.TRANSFER, request.senderId(),
+                Optional.of(request.recipientId()), request.amount(), request.context(), Optional.empty(),
+                Optional.empty(), sender.snapshot(), senderAfter, Optional.of(recipient.snapshot()),
+                Optional.of(recipientAfter), request.amount().negate(), request.amount(), DIRECT_MULTIPLIER,
+                request.amount(), List.of()));
         return successfulTransfer(request, sender.snapshot(), senderAfter, recipient.snapshot(), recipientAfter, false);
     }
 
     private CompletableFuture<MutationResult> recoverSingle(
             SingleCommand command, CompletableFuture<MutationResult> attempt) {
         return attempt.exceptionallyCompose(failure -> this.database.transaction(READ_ONLY,
-                        connection -> this.transactions.findOperation(connection, command.context().operationId()))
+                        connection -> this.operations.find(connection, command.context().operationId()))
                 .thenCompose(existing -> existing.isEmpty()
                         ? CompletableFuture.failedFuture(failure)
-                        : CompletableFuture.completedFuture(replaySingle(command, existing))));
+                        : CompletableFuture.completedFuture(replaySingle(command, existing.orElseThrow()))));
     }
 
     private CompletableFuture<TransferResult> recoverTransfer(
             TransferRequest request, CompletableFuture<TransferResult> attempt) {
         return attempt.exceptionallyCompose(failure -> this.database.transaction(READ_ONLY,
-                        connection -> this.transactions.findOperation(connection, request.context().operationId()))
+                        connection -> this.operations.find(connection, request.context().operationId()))
                 .thenCompose(existing -> existing.isEmpty()
                         ? CompletableFuture.failedFuture(failure)
-                        : CompletableFuture.completedFuture(replayTransfer(request, existing))));
+                        : CompletableFuture.completedFuture(replayTransfer(request, existing.orElseThrow()))));
     }
 
-    private static MutationResult replaySingle(SingleCommand command, List<TransactionRecord> records) {
-        if (records.size() != 1 || !compatible(command, records.getFirst())) {
+    private CompletableFuture<MutationResult> recoverAward(
+            AwardRequest request, CompletableFuture<MutationResult> attempt) {
+        return attempt.exceptionallyCompose(failure -> this.database.transaction(READ_ONLY,
+                        connection -> this.operations.find(connection, request.context().operationId()))
+                .thenCompose(existing -> existing.isEmpty()
+                        ? CompletableFuture.failedFuture(failure)
+                        : CompletableFuture.completedFuture(replayAward(request, existing.orElseThrow()))));
+    }
+
+    private static MutationResult replaySingle(SingleCommand command, OperationRecord record) {
+        if (!compatible(command, record)) {
             return rejected(command, MutationStatus.IDEMPOTENCY_CONFLICT, Optional.empty());
         }
-        TransactionRecord record = records.getFirst();
-        BalanceSnapshot before = new BalanceSnapshot(record.accountId(), record.balanceBefore(), record.revisionBefore());
-        BalanceSnapshot after = new BalanceSnapshot(record.accountId(), record.balanceAfter(), record.revisionAfter());
-        if (command.type() == MutationType.AWARD) {
-            BigDecimal base = record.baseAmount().orElseThrow();
-            BigDecimal multiplier = record.multiplier().orElseThrow();
-            return successfulAward(command, before, after,
-                    new AwardCalculation(base, multiplier, record.delta()), true);
-        }
-        return successful(command, before, after, record.delta(), true);
+        return successful(command, record.accountBefore(), record.accountAfter(), record.delta(), true);
     }
 
-    private static TransferResult replayTransfer(TransferRequest request, List<TransactionRecord> records) {
-        if (records.size() != 2) {
-            return rejectedTransfer(request, MutationStatus.IDEMPOTENCY_CONFLICT);
+    private static MutationResult replayAward(AwardRequest request, OperationRecord record) {
+        SingleCommand command = new SingleCommand(
+                request.playerId(), request.amount(), request.context(), MutationType.AWARD, TransactionKind.AWARD);
+        if (!compatibleAward(request, record)) {
+            return rejected(command, MutationStatus.IDEMPOTENCY_CONFLICT, Optional.empty());
         }
-        TransactionRecord debit = records.get(0);
-        TransactionRecord credit = records.get(1);
-        if (!compatibleTransfer(request, debit, credit)) {
+        return successfulAward(command, record.accountBefore(), record.accountAfter(),
+                new AwardCalculation(record.baseAmount(), record.multiplier(), record.finalAmount(),
+                        record.appliedBoosts()), true);
+    }
+
+    private static TransferResult replayTransfer(TransferRequest request, OperationRecord record) {
+        if (!compatibleTransfer(request, record)) {
             return rejectedTransfer(request, MutationStatus.IDEMPOTENCY_CONFLICT);
         }
         return successfulTransfer(
                 request,
-                new BalanceSnapshot(debit.accountId(), debit.balanceBefore(), debit.revisionBefore()),
-                new BalanceSnapshot(debit.accountId(), debit.balanceAfter(), debit.revisionAfter()),
-                new BalanceSnapshot(credit.accountId(), credit.balanceBefore(), credit.revisionBefore()),
-                new BalanceSnapshot(credit.accountId(), credit.balanceAfter(), credit.revisionAfter()),
+                record.accountBefore(),
+                record.accountAfter(),
+                record.counterpartyBefore().orElseThrow(),
+                record.counterpartyAfter().orElseThrow(),
                 true);
     }
 
-    private static boolean compatible(SingleCommand command, TransactionRecord record) {
-        return IdempotencyMatcher.matches(record, 0, command.playerId(), Optional.empty(), command.kind(),
-                command.amount(), command.context());
+    private static boolean compatible(SingleCommand command, OperationRecord record) {
+        return IdempotencyMatcher.matches(record, operationType(command.type()), command.playerId(), Optional.empty(),
+                command.amount(), command.context(), Optional.empty(), Optional.empty());
     }
 
-    private static boolean compatibleTransfer(
-            TransferRequest request, TransactionRecord debit, TransactionRecord credit) {
-        return IdempotencyMatcher.matches(debit, 0, request.senderId(), Optional.of(request.recipientId()),
-                        TransactionKind.TRANSFER_DEBIT, request.amount(), request.context())
-                && IdempotencyMatcher.matches(credit, 1, request.recipientId(), Optional.of(request.senderId()),
-                        TransactionKind.TRANSFER_CREDIT, request.amount(), request.context());
+    private static boolean compatibleAward(AwardRequest request, OperationRecord record) {
+        return IdempotencyMatcher.matches(record, OperationType.AWARD, request.playerId(), Optional.empty(),
+                request.amount(), request.context(), Optional.of(request.gameId()), Optional.of(request.serverId()));
+    }
+
+    private static boolean compatibleTransfer(TransferRequest request, OperationRecord record) {
+        return IdempotencyMatcher.matches(record, OperationType.TRANSFER, request.senderId(),
+                Optional.of(request.recipientId()), request.amount(), request.context(), Optional.empty(),
+                Optional.empty());
+    }
+
+    private static OperationRecord operation(
+            SingleCommand command, BalanceSnapshot before, BalanceSnapshot after, BigDecimal delta) {
+        BigDecimal finalAmount = command.type() == MutationType.SET_BALANCE ? after.balance() : command.amount();
+        return new OperationRecord(command.context().operationId(), operationType(command.type()), command.playerId(),
+                Optional.empty(), command.amount(), command.context(), Optional.empty(), Optional.empty(), before,
+                after, Optional.empty(), Optional.empty(), delta, command.amount(), DIRECT_MULTIPLIER, finalAmount,
+                List.of());
+    }
+
+    private static OperationType operationType(MutationType type) {
+        return OperationType.valueOf(type.name());
     }
 
     private static MutationResult successful(

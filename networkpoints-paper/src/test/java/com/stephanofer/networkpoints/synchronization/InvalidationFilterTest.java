@@ -34,6 +34,21 @@ class InvalidationFilterTest {
         filter.close();
     }
 
+    @Test
+    void permitsRetryAfterFailedRefresh() {
+        InvalidationFilter filter = new InvalidationFilter("lobby-1");
+        BalanceInvalidation invalidation = event(
+                UUID.randomUUID(), "games-1", UUID.randomUUID(), 2);
+
+        assertTrue(filter.shouldRefresh(invalidation, true, 1));
+        assertFalse(filter.shouldRefresh(invalidation, true, 1));
+
+        filter.allowRetry(invalidation);
+
+        assertTrue(filter.shouldRefresh(invalidation, true, 1));
+        filter.close();
+    }
+
     private static BalanceInvalidation event(UUID operationId, String serverId, UUID playerId, long revision) {
         return new BalanceInvalidation(operationId, serverId, playerId, revision, TransactionKind.CREDIT);
     }

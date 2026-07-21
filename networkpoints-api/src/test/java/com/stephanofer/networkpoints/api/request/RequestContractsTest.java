@@ -37,6 +37,10 @@ class RequestContractsTest {
                 () -> new DebitRequest(PLAYER_ID, new BigDecimal("1.001"), CONTEXT));
         assertThrows(IllegalArgumentException.class,
                 () -> new AwardRequest(PLAYER_ID, BigDecimal.ONE, " ", "server", CONTEXT));
+        assertThrows(IllegalArgumentException.class,
+                () -> new AwardRequest(PLAYER_ID, BigDecimal.ONE, "a".repeat(65), "server", CONTEXT));
+        assertThrows(IllegalArgumentException.class,
+                () -> new AwardRequest(PLAYER_ID, BigDecimal.ONE, "juego-ñ", "server", CONTEXT));
     }
 
     @Test

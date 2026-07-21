@@ -109,6 +109,21 @@ class NetworkPointsConfigTest {
     }
 
     @Test
+    void preparedReloadDoesNotPublishUntilCommitted() throws Exception {
+        NetworkPointsConfig configuration = new NetworkPointsConfig(directory);
+        ConfigSnapshot original = configuration.start();
+        replace(directory.resolve("config.yml"), "symbol: ✦", "symbol: NP");
+
+        NetworkPointsConfig.ReloadCandidate candidate = configuration.prepareReload(ignored -> { });
+
+        assertSame(original, configuration.snapshot());
+        assertEquals("NP", candidate.published().reloadable().currency().symbol());
+        assertSame(candidate.published(), configuration.publish(candidate));
+        assertSame(candidate.published(), configuration.snapshot());
+        assertThrows(IllegalStateException.class, () -> configuration.publish(candidate));
+    }
+
+    @Test
     void startupAccumulatesErrorsWithFileAndPath() throws Exception {
         new NetworkPointsConfig(directory).start();
         replaceLine(directory.resolve("config.yml"), "  maximum-balance:", "  maximum-balance: 99999999999999999999999999999.00");
