@@ -18,6 +18,14 @@ import com.stephanofer.networkpoints.award.NetworkBoostersAwardCalculator;
 import com.stephanofer.networkpoints.award.NeutralAwardCalculator;
 import com.stephanofer.networkpoints.config.ConfigSnapshot;
 import com.stephanofer.networkpoints.config.NetworkPointsConfig;
+import com.stephanofer.networkpoints.command.PointsCommandController;
+import com.stephanofer.networkpoints.feedback.FeedbackAction;
+import com.stephanofer.networkpoints.feedback.FeedbackCompiler;
+import com.stephanofer.networkpoints.feedback.FeedbackService;
+import com.stephanofer.networkpoints.identity.PlayerIdentityService;
+import com.stephanofer.networkpoints.localization.LocalizedCatalog;
+import com.stephanofer.networkpoints.placeholder.NetworkPointsExpansion;
+import com.stephanofer.networkpoints.placeholder.PointsPlaceholderRenderer;
 import com.stephanofer.networkpoints.persistence.AuditStore;
 import com.stephanofer.networkpoints.persistence.DatabaseFactory;
 import com.stephanofer.networkpoints.persistence.TransactionRepository;
@@ -28,9 +36,15 @@ import com.stephanofer.networkpoints.synchronization.BalanceInvalidationCodec;
 import com.stephanofer.networkpoints.synchronization.PointsSynchronization;
 import com.stephanofer.networkpoints.synchronization.RedisFactory;
 import com.stephanofer.networkboosters.api.NetworkBoostersService;
+import com.stephanofer.networkplayersettings.assets.api.CountryFlagService;
+import com.stephanofer.networkplayersettings.settings.api.PlayerSettingsService;
+import com.stephanofer.networkplayersettings.settings.api.PlayerStyleService;
+import com.stephanofer.networkplayersettings.settings.event.PlayerSettingChangeEvent;
+import com.stephanofer.networkplayersettings.settings.event.PlayerSettingsReadyEvent;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
@@ -42,11 +56,17 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.plugin.ServicePriority;
 import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.command.CommandSender;
+import io.papermc.paper.command.brigadier.CommandSourceStack;
+import net.luckperms.api.LuckPerms;
+import net.luckperms.api.LuckPermsProvider;
+import org.incendo.cloud.paper.PaperCommandManager;
 
 public final class NetworkPointsLifecycle implements Listener {
 
     private final JavaPlugin plugin;
     private final NetworkPointsConfig configuration;
+    private final PaperCommandManager.Bootstrapped<CommandSourceStack> commandManager;
     private final AtomicReference<LifecycleState> state = new AtomicReference<>(LifecycleState.NEW);
     private Database database;
     private AccountStore accountStore;
@@ -57,9 +77,13 @@ public final class NetworkPointsLifecycle implements Listener {
     private PointsSynchronization synchronization;
     private RedisStatusRegistration redisStatus;
     private BukkitTask auditTask;
+    private PlayerIdentityService identities;
+    private FeedbackService feedback;
+    private NetworkPointsExpansion expansion;
 
-    public NetworkPointsLifecycle(JavaPlugin plugin) {
+    public NetworkPointsLifecycle(JavaPlugin plugin, PaperCommandManager.Bootstrapped<CommandSourceStack> commandManager) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
+        this.commandManager = Objects.requireNonNull(commandManager, "commandManager");
         this.configuration = new NetworkPointsConfig(plugin.getDataPath());
     }
 
@@ -77,6 +101,7 @@ public final class NetworkPointsLifecycle implements Listener {
             this.plugin.getServer().getServicesManager().register(
                     NetworkPointsService.class, this.service, this.plugin, ServicePriority.Normal);
             this.plugin.getServer().getPluginManager().registerEvents(this, this.plugin);
+            startPaperExperience(snapshot);
             this.plugin.getServer().getOnlinePlayers().forEach(
                     player -> preload(player.getUniqueId(), player.getName()));
             scheduleAuditCleanup(snapshot.reloadable().audit());
@@ -128,6 +153,9 @@ public final class NetworkPointsLifecycle implements Listener {
 
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
+        if (this.identities != null) {
+            this.identities.invalidate(event.getPlayer().getUniqueId());
+        }
         preload(event.getPlayer().getUniqueId(), event.getPlayer().getName());
     }
 
@@ -136,6 +164,26 @@ public final class NetworkPointsLifecycle implements Listener {
         BalanceCache cache = this.balanceCache;
         if (cache != null) {
             cache.invalidate(event.getPlayer().getUniqueId());
+        }
+        if (this.feedback != null) {
+            this.feedback.clear(event.getPlayer());
+        }
+        if (this.identities != null) {
+            this.identities.invalidate(event.getPlayer().getUniqueId());
+        }
+    }
+
+    @EventHandler
+    public void onPlayerSettingChange(PlayerSettingChangeEvent event) {
+        if (this.identities != null) {
+            this.identities.invalidate(event.playerId());
+        }
+    }
+
+    @EventHandler
+    public void onPlayerSettingsReady(PlayerSettingsReadyEvent event) {
+        if (this.feedback != null) {
+            this.feedback.ready(event.player());
         }
     }
 
@@ -166,8 +214,8 @@ public final class NetworkPointsLifecycle implements Listener {
                 snapshot.restartRequired().serverId());
         ConfigSnapshot.Reloadable reloadable = snapshot.reloadable();
         AmountParser parser = new AmountParser(
-                reloadable.payments().minimumAmount(),
-                reloadable.payments().maximumAmount(),
+                java.math.BigDecimal.ZERO,
+                snapshot.restartRequired().monetaryPolicy().maximumBalance(),
                 snapshot.restartRequired().monetaryPolicy().maximumBalance(),
                 reloadable.amountInput().suffixes());
         List<CompactTier> tiers = reloadable.amountFormat().compactTiers().stream()
@@ -191,7 +239,76 @@ public final class NetworkPointsLifecycle implements Listener {
         PostCommitCoordinator postCommit = new PostCommitCoordinator(
                 this.balanceCache, this.synchronization, new PaperEventDispatcher(this.plugin));
         this.service = new DurableNetworkPointsService(
-                engine, this.balanceCache, postCommit, parser, formatter, defaultMode);
+                engine, this.balanceCache, postCommit, parser, formatter, defaultMode, reloadable.currency());
+    }
+
+    private void startPaperExperience(ConfigSnapshot snapshot) {
+        PlayerSettingsService settings = requiredService(PlayerSettingsService.class, "PlayerSettingsService");
+        PlayerStyleService styles = requiredService(PlayerStyleService.class, "PlayerStyleService");
+        CountryFlagService flags = requiredService(CountryFlagService.class, "CountryFlagService");
+        LuckPerms luckPerms = LuckPermsProvider.get();
+        LocalizedCatalog<FeedbackAction> catalog = new FeedbackCompiler().compile(snapshot.reloadable().messages());
+        this.feedback = new FeedbackService(this.plugin, settings, catalog);
+        this.identities = new PlayerIdentityService(
+                this.plugin, this.accountStore, styles, flags, luckPerms, snapshot.reloadable().identity(),
+                Duration.ofMinutes(snapshot.reloadable().cache().expireAfterAccessMinutes()));
+        new PointsCommandController(
+                this.plugin, this.commandManager, this.service, this.accountStore, this.auditStore, this.identities,
+                this.feedback, this.configuration::snapshot, this::state, this::redisState, this::reload).register();
+        ConfigSnapshot.Integrations integrations = snapshot.restartRequired().integrations();
+        if (integrations.placeholderApi() && this.plugin.getServer().getPluginManager().isPluginEnabled("PlaceholderAPI")) {
+            this.expansion = new NetworkPointsExpansion(this.plugin,
+                    new PointsPlaceholderRenderer(this.service, this.configuration::snapshot));
+            if (!this.expansion.register()) {
+                throw new IllegalStateException("PlaceholderAPI rejected the NetworkPoints expansion");
+            }
+        }
+    }
+
+    private <T> T requiredService(Class<T> type, String name) {
+        T service = this.plugin.getServer().getServicesManager().load(type);
+        if (service == null) {
+            throw new IllegalStateException(name + " is unavailable");
+        }
+        return service;
+    }
+
+    private String redisState() {
+        RedisClient current = this.redis;
+        return current == null ? "CLOSED" : current.operationalStatus().state().name();
+    }
+
+    private void reload(CommandSender sender) {
+        try {
+            AtomicReference<LocalizedCatalog<FeedbackAction>> catalog = new AtomicReference<>();
+            ConfigSnapshot snapshot = this.configuration.reload(reloadable ->
+                    catalog.set(new FeedbackCompiler().compile(reloadable.messages())));
+            this.feedback.update(catalog.get());
+            this.identities.update(snapshot.reloadable().identity());
+            updatePresentation(snapshot);
+            if (this.auditTask != null) {
+                this.auditTask.cancel();
+            }
+            scheduleAuditCleanup(snapshot.reloadable().audit());
+            this.feedback.send(sender, "reload-success", Map.of(
+                    "restart_changes", net.kyori.adventure.text.Component.text(String.join(", ", snapshot.restartRequiredChanges()))));
+        } catch (Exception exception) {
+            this.plugin.getComponentLogger().warn("NetworkPoints reload rejected.", exception);
+            this.feedback.send(sender, "reload-failed", Map.of());
+        }
+    }
+
+    private void updatePresentation(ConfigSnapshot snapshot) {
+        ConfigSnapshot.Reloadable reloadable = snapshot.reloadable();
+        AmountParser parser = new AmountParser(java.math.BigDecimal.ZERO,
+                snapshot.restartRequired().monetaryPolicy().maximumBalance(),
+                snapshot.restartRequired().monetaryPolicy().maximumBalance(), reloadable.amountInput().suffixes());
+        List<CompactTier> tiers = reloadable.amountFormat().compactTiers().stream()
+                .map(tier -> new CompactTier(tier.threshold(), tier.pattern(), tier.suffix(), tier.display())).toList();
+        AmountFormatter formatter = new AmountFormatter(reloadable.amountFormat().groupedPattern(),
+                reloadable.amountFormat().groupingSeparator(), reloadable.amountFormat().decimalSeparator(), tiers);
+        this.service.updatePresentation(parser, formatter,
+                AmountDisplayMode.valueOf(reloadable.amountFormat().defaultMode().name()), reloadable.currency());
     }
 
     private AwardCalculator awardCalculator(ConfigSnapshot.Integrations integrations) {
@@ -243,6 +360,18 @@ public final class NetworkPointsLifecycle implements Listener {
     }
 
     private void closeRuntime() {
+        if (this.expansion != null) {
+            this.expansion.unregister();
+            this.expansion = null;
+        }
+        if (this.feedback != null) {
+            this.feedback.close();
+            this.feedback = null;
+        }
+        if (this.identities != null) {
+            this.identities.close();
+            this.identities = null;
+        }
         if (this.redisStatus != null) {
             this.redisStatus.close();
             this.redisStatus = null;

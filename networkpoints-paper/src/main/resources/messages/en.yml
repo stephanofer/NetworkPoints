@@ -35,3 +35,45 @@ reload-success:
 reload-failed:
   - type: "CHAT"
     message: "<red>The configuration is invalid; the previous version remains active.</red>"
+player-only:
+  - type: "CHAT"
+    message: "<red>This command can only be used by a player.</red>"
+invalid-command:
+  - type: "CHAT"
+    message: "<red>Invalid command syntax.</red>"
+mutation-success:
+  - type: "CHAT"
+    message: "<green>Updated <player><green> by <amount>. New balance: <balance>.</green>"
+mutation-insufficient-funds:
+  - type: "CHAT"
+    message: "<red>The account does not have enough points.</red>"
+mutation-balance-limit-exceeded:
+  - type: "CHAT"
+    message: "<red>The operation would exceed the maximum balance.</red>"
+mutation-invalid-amount:
+  - type: "CHAT"
+    message: "<red>The amount is invalid.</red>"
+mutation-account-not-found:
+  - type: "CHAT"
+    message: "<red>The account no longer exists.</red>"
+mutation-booster-state-not-ready:
+  - type: "CHAT"
+    message: "<red>Booster data is not ready yet.</red>"
+mutation-idempotency-conflict:
+  - type: "CHAT"
+    message: "<red>The operation identifier conflicts with an earlier request.</red>"
+mutation-service-unavailable:
+  - type: "CHAT"
+    message: "<red>The points service is unavailable.</red>"
+history-header:
+  - type: "CHAT"
+    message: "<gold>Transaction history for <player><gold> (page <page>)</gold>"
+history-entry:
+  - type: "CHAT"
+    message: "<dark_gray><time></dark_gray> <gray><type> | <delta> | balance <balance> | <source></gray>"
+history-empty:
+  - type: "CHAT"
+    message: "<gray>No transactions were found on this page.</gray>"
+status:
+  - type: "CHAT"
+    message: "<gold>NetworkPoints</gold> <gray>| server <server> | state <state> | Redis <redis></gray>"

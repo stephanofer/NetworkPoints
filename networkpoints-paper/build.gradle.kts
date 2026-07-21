@@ -9,15 +9,22 @@ dependencies {
 
     compileOnly(libs.paper.api)
     compileOnly(libs.network.boosters.api)
+    compileOnly(libs.network.player.settings)
+    compileOnly(libs.luckperms.api)
+    compileOnly(libs.placeholder.api)
 
     implementation(libs.craftkit.database)
     implementation(libs.craftkit.redis)
     implementation(libs.boosted.yaml)
     implementation(libs.caffeine)
+    implementation(libs.cloud.paper)
 
     testImplementation(project(":networkpoints-api"))
     testImplementation(libs.paper.api)
     testImplementation(libs.network.boosters.api)
+    testImplementation(libs.network.player.settings)
+    testImplementation(libs.luckperms.api)
+    testImplementation(libs.placeholder.api)
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
@@ -58,6 +65,7 @@ tasks.shadowJar {
     relocate("io.netty", "com.stephanofer.networkpoints.libs.netty")
     relocate("reactor", "com.stephanofer.networkpoints.libs.reactor")
     relocate("org.reactivestreams", "com.stephanofer.networkpoints.libs.reactiveStreams")
+    relocate("org.incendo.cloud", "com.stephanofer.networkpoints.libs.cloud")
 }
 
 val shadowArchive = tasks.shadowJar.flatMap { it.archiveFile }
@@ -79,6 +87,7 @@ val verifyShadowJar = tasks.register("verifyShadowJar") {
                 "com/stephanofer/networkpoints/libs/mysql/cj/jdbc/Driver.class",
                 "com/stephanofer/networkpoints/libs/caffeine/cache/Caffeine.class",
                 "com/stephanofer/networkpoints/libs/craftkit/redis/RedisClient.class",
+                "com/stephanofer/networkpoints/libs/cloud/paper/PaperCommandManager.class",
                 "db/migration/V1__create_networkpoints.sql"
             )
             check(entries.containsAll(required)) {
@@ -96,9 +105,11 @@ val verifyShadowJar = tasks.register("verifyShadowJar") {
                 "reactor/",
                 "org/reactivestreams/",
                 "com/stephanofer/networkboosters/",
+                "com/stephanofer/networkplayersettings/",
+                "net/luckperms/",
+                "me/clip/placeholderapi/",
                 "net/kyori/",
                 "org/bukkit/",
-                "org/incendo/cloud/",
                 "com/zaxxer/hikari/",
                 "org/flywaydb/",
                 "tools/jackson/",

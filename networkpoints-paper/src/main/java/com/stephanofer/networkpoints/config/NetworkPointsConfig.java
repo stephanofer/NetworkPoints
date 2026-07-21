@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 public final class NetworkPointsConfig {
     private final ConfigLoader loader;
@@ -24,8 +25,14 @@ public final class NetworkPointsConfig {
     }
 
     public ConfigSnapshot reload() throws IOException, ConfigValidationException {
+        return reload(ignored -> { });
+    }
+
+    public ConfigSnapshot reload(Consumer<ConfigSnapshot.Reloadable> validator)
+            throws IOException, ConfigValidationException {
         ConfigSnapshot previous = snapshot();
         ConfigSnapshot candidate = loader.loadCandidate();
+        validator.accept(candidate.reloadable());
         ConfigSnapshot published = new ConfigSnapshot(
                 previous.restartRequired(),
                 candidate.reloadable(),

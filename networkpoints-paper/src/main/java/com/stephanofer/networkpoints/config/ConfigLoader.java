@@ -58,6 +58,9 @@ final class ConfigLoader {
         ConfigSnapshot.Database database = readDatabase(c);
         ConfigSnapshot.Redis redis = readRedis(c);
         ConfigSnapshot.Integrations integrations = readIntegrations(c);
+        c.require(integrations.luckPerms(), "integrations.luckperms.enabled", "must be true because identity requires LuckPerms");
+        c.require(integrations.networkPlayerSettings(), "integrations.network-player-settings.enabled",
+                "must be true because localization and identity require NetworkPlayerSettings");
         ConfigSnapshot.MonetaryPolicy monetaryPolicy = readMonetaryPolicy(c);
         ConfigSnapshot.Currency currency = readCurrency(c);
         ConfigSnapshot.AmountInput amountInput = readAmountInput(c);

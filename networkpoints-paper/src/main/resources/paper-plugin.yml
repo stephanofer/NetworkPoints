@@ -17,3 +17,15 @@ dependencies:
       load: BEFORE
       required: false
       join-classpath: true
+    NetworkPlayerSettings:
+      load: BEFORE
+      required: true
+      join-classpath: true
+    LuckPerms:
+      load: BEFORE
+      required: true
+      join-classpath: true
+    PlaceholderAPI:
+      load: BEFORE
+      required: false
+      join-classpath: true

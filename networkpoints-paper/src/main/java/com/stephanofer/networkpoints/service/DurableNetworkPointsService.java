@@ -4,6 +4,7 @@ import com.stephanofer.networkpoints.account.BalanceCache;
 import com.stephanofer.networkpoints.account.EconomicEngine;
 import com.stephanofer.networkpoints.amount.AmountFormatter;
 import com.stephanofer.networkpoints.amount.AmountParser;
+import com.stephanofer.networkpoints.config.ConfigSnapshot;
 import com.stephanofer.networkpoints.api.NetworkPointsService;
 import com.stephanofer.networkpoints.api.amount.AmountDisplayMode;
 import com.stephanofer.networkpoints.api.amount.AmountParseResult;
@@ -26,15 +27,18 @@ import java.util.Set;
 import java.util.function.Supplier;
 import java.util.concurrent.atomic.AtomicBoolean;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.minimessage.MiniMessage;
+import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 
 public final class DurableNetworkPointsService implements NetworkPointsService {
 
     private final EconomicEngine engine;
     private final BalanceCache balances;
     private final PostCommitCoordinator postCommit;
-    private final AmountParser parser;
-    private final AmountFormatter formatter;
-    private final AmountDisplayMode defaultDisplayMode;
+    private volatile AmountParser parser;
+    private volatile AmountFormatter formatter;
+    private volatile AmountDisplayMode defaultDisplayMode;
+    private volatile ConfigSnapshot.Currency currency;
     private final AtomicBoolean acceptingMutations = new AtomicBoolean(true);
     private final Set<CompletableFuture<?>> inFlight = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Object mutationGate = new Object();
@@ -45,13 +49,15 @@ public final class DurableNetworkPointsService implements NetworkPointsService {
             PostCommitCoordinator postCommit,
             AmountParser parser,
             AmountFormatter formatter,
-            AmountDisplayMode defaultDisplayMode) {
+            AmountDisplayMode defaultDisplayMode,
+            ConfigSnapshot.Currency currency) {
         this.engine = Objects.requireNonNull(engine, "engine");
         this.balances = Objects.requireNonNull(balances, "balances");
         this.postCommit = Objects.requireNonNull(postCommit, "postCommit");
         this.parser = Objects.requireNonNull(parser, "parser");
         this.formatter = Objects.requireNonNull(formatter, "formatter");
         this.defaultDisplayMode = Objects.requireNonNull(defaultDisplayMode, "defaultDisplayMode");
+        this.currency = Objects.requireNonNull(currency, "currency");
     }
 
     @Override
@@ -114,7 +120,10 @@ public final class DurableNetworkPointsService implements NetworkPointsService {
 
     @Override
     public Component formatAmount(BigDecimal amount) {
-        return this.formatter.formatComponent(amount, this.defaultDisplayMode);
+        ConfigSnapshot.Currency current = this.currency;
+        return MiniMessage.miniMessage().deserialize(current.displayFormat(),
+                Placeholder.component("amount", this.formatter.formatComponent(amount, this.defaultDisplayMode)),
+                Placeholder.unparsed("symbol", current.symbol()));
     }
 
     @Override
@@ -125,6 +134,14 @@ public final class DurableNetworkPointsService implements NetworkPointsService {
     @Override
     public AmountParseResult parseAmount(String input) {
         return this.parser.parse(input);
+    }
+
+    public void updatePresentation(AmountParser parser, AmountFormatter formatter, AmountDisplayMode defaultDisplayMode,
+                                   ConfigSnapshot.Currency currency) {
+        this.parser = Objects.requireNonNull(parser, "parser");
+        this.formatter = Objects.requireNonNull(formatter, "formatter");
+        this.defaultDisplayMode = Objects.requireNonNull(defaultDisplayMode, "defaultDisplayMode");
+        this.currency = Objects.requireNonNull(currency, "currency");
     }
 
     public void stopAcceptingMutations() {
