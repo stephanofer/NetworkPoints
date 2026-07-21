@@ -1,4 +1,4 @@
-config-version: 1
+config-version: 4
 
 payment-dialog:
   title: "<gold>Confirmar pago</gold>"
@@ -22,9 +22,15 @@ payment-dialog:
 balance:
   - type: "CHAT"
     message: "<gray>Tu saldo: <amount></gray>"
+balance-compact-hover:
+  - type: "CHAT"
+    message: "<gray>Tu saldo: <amount> <yellow><hover:show_text:'<gray>Monto exacto: <white><exact_amount></white></gray>'>[Monto exacto]</hover></yellow></gray>"
 balance-other:
   - type: "CHAT"
     message: "<player><gray> tiene <amount>.</gray>"
+balance-other-compact-hover:
+  - type: "CHAT"
+    message: "<player><gray> tiene <amount>. <yellow><hover:show_text:'<gray>Monto exacto: <white><exact_amount></white></gray>'>[Monto exacto]</hover></yellow></gray>"
 pay-sent:
   - type: "CHAT"
     message: "<green>Enviaste <amount> a <recipient>.</green>"
@@ -108,9 +114,30 @@ player-only:
 invalid-command:
   - type: "CHAT"
     message: "<red>La sintaxis del comando no es válida.</red>"
-mutation-success:
+mutation-give-executed:
   - type: "CHAT"
-    message: "<green>Actualizaste a <player><green> por <amount>. Nuevo saldo: <balance>.</green>"
+    message: "<green>Entregaste <amount> a <player><green>. Nuevo saldo: <balance>.</green>"
+mutation-give-received:
+  - type: "CHAT"
+    message: "<green>Recibiste <amount> de <actor><green>. Nuevo saldo: <balance>.</green>"
+mutation-take-executed:
+  - type: "CHAT"
+    message: "<green>Retiraste <amount> a <player><green>. Nuevo saldo: <balance>.</green>"
+mutation-take-received:
+  - type: "CHAT"
+    message: "<yellow><actor><yellow> retiró <amount> de tu cuenta. Nuevo saldo: <balance>.</yellow>"
+mutation-set-executed:
+  - type: "CHAT"
+    message: "<green>Estableciste el saldo de <player><green> en <balance>.</green>"
+mutation-set-received:
+  - type: "CHAT"
+    message: "<yellow><actor><yellow> estableció tu saldo en <balance>.</yellow>"
+mutation-reset-executed:
+  - type: "CHAT"
+    message: "<green>Reiniciaste el saldo de <player><green>. Nuevo saldo: <balance>.</green>"
+mutation-reset-received:
+  - type: "CHAT"
+    message: "<yellow><actor><yellow> reinició tu saldo. Nuevo saldo: <balance>.</yellow>"
 mutation-insufficient-funds:
   - type: "CHAT"
     message: "<red>La cuenta no tiene suficientes puntos.</red>"

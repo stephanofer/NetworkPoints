@@ -1,4 +1,4 @@
-config-version: 1
+config-version: 4
 
 payment-dialog:
   title: "<gold>Confirm payment</gold>"
@@ -22,9 +22,15 @@ payment-dialog:
 balance:
   - type: "CHAT"
     message: "<gray>Your balance: <amount></gray>"
+balance-compact-hover:
+  - type: "CHAT"
+    message: "<gray>Your balance: <amount> <yellow><hover:show_text:'<gray>Exact amount: <white><exact_amount></white></gray>'>[Exact amount]</hover></yellow></gray>"
 balance-other:
   - type: "CHAT"
     message: "<player><gray> has <amount>.</gray>"
+balance-other-compact-hover:
+  - type: "CHAT"
+    message: "<player><gray> has <amount>. <yellow><hover:show_text:'<gray>Exact amount: <white><exact_amount></white></gray>'>[Exact amount]</hover></yellow></gray>"
 pay-sent:
   - type: "CHAT"
     message: "<green>You sent <amount> to <recipient>.</green>"
@@ -108,9 +114,30 @@ player-only:
 invalid-command:
   - type: "CHAT"
     message: "<red>Invalid command syntax.</red>"
-mutation-success:
+mutation-give-executed:
   - type: "CHAT"
-    message: "<green>Updated <player><green> by <amount>. New balance: <balance>.</green>"
+    message: "<green>Gave <amount> to <player><green>. New balance: <balance>.</green>"
+mutation-give-received:
+  - type: "CHAT"
+    message: "<green>You received <amount> from <actor><green>. New balance: <balance>.</green>"
+mutation-take-executed:
+  - type: "CHAT"
+    message: "<green>Took <amount> from <player><green>. New balance: <balance>.</green>"
+mutation-take-received:
+  - type: "CHAT"
+    message: "<yellow><actor><yellow> took <amount> from your account. New balance: <balance>.</yellow>"
+mutation-set-executed:
+  - type: "CHAT"
+    message: "<green>Set <player><green>'s balance to <balance>.</green>"
+mutation-set-received:
+  - type: "CHAT"
+    message: "<yellow><actor><yellow> set your balance to <balance>.</yellow>"
+mutation-reset-executed:
+  - type: "CHAT"
+    message: "<green>Reset <player><green>'s balance. New balance: <balance>.</green>"
+mutation-reset-received:
+  - type: "CHAT"
+    message: "<yellow><actor><yellow> reset your balance. New balance: <balance>.</yellow>"
 mutation-insufficient-funds:
   - type: "CHAT"
     message: "<red>The account does not have enough points.</red>"

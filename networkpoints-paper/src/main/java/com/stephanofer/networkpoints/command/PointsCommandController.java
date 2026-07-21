@@ -4,6 +4,7 @@ import com.stephanofer.networkpoints.account.AccountRecord;
 import com.stephanofer.networkpoints.account.AccountStore;
 import com.stephanofer.networkpoints.api.NetworkPointsService;
 import com.stephanofer.networkpoints.api.amount.AmountParseResult;
+import com.stephanofer.networkpoints.api.amount.AmountDisplayMode;
 import com.stephanofer.networkpoints.api.request.CreditRequest;
 import com.stephanofer.networkpoints.api.request.DebitRequest;
 import com.stephanofer.networkpoints.api.request.SetBalanceRequest;
@@ -21,6 +22,7 @@ import java.math.BigDecimal;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -34,8 +36,10 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.incendo.cloud.Command;
 import org.incendo.cloud.description.Description;
 import org.incendo.cloud.exception.ArgumentParseException;
+import org.incendo.cloud.exception.CommandExecutionException;
 import org.incendo.cloud.exception.InvalidSyntaxException;
 import org.incendo.cloud.exception.NoPermissionException;
+import org.incendo.cloud.minecraft.extras.MinecraftExceptionHandler;
 import org.incendo.cloud.paper.PaperCommandManager;
 import org.incendo.cloud.suggestion.SuggestionProvider;
 
@@ -47,7 +51,7 @@ public final class PointsCommandController {
             .withZone(ZoneOffset.UTC);
 
     private final JavaPlugin plugin;
-    private final PaperCommandManager.Bootstrapped<CommandSourceStack> manager;
+    private final PaperCommandManager<CommandSourceStack> manager;
     private final NetworkPointsService points;
     private final AccountStore accounts;
     private final AuditStore audit;
@@ -58,12 +62,14 @@ public final class PointsCommandController {
     private final Supplier<String> redisState;
     private final ReloadAction reload;
     private final PaymentController payments;
+    private final AdministrativeNotifications administrativeNotifications;
 
-    public PointsCommandController(JavaPlugin plugin, PaperCommandManager.Bootstrapped<CommandSourceStack> manager,
+    public PointsCommandController(JavaPlugin plugin, PaperCommandManager<CommandSourceStack> manager,
                                    NetworkPointsService points, AccountStore accounts, AuditStore audit,
                                    PlayerIdentityService identities, FeedbackService feedback,
-                                    Supplier<ConfigSnapshot> configuration, Supplier<LifecycleState> state,
-                                    Supplier<String> redisState, ReloadAction reload, PaymentController payments) {
+                                     Supplier<ConfigSnapshot> configuration, Supplier<LifecycleState> state,
+                                     Supplier<String> redisState, ReloadAction reload, PaymentController payments,
+                                     AdministrativeNotifications administrativeNotifications) {
         this.plugin = plugin;
         this.manager = manager;
         this.points = points;
@@ -76,6 +82,7 @@ public final class PointsCommandController {
         this.redisState = redisState;
         this.reload = reload;
         this.payments = payments;
+        this.administrativeNotifications = administrativeNotifications;
     }
 
     public void register() {
@@ -155,7 +162,7 @@ public final class PointsCommandController {
         this.manager.command(base.literal(command.name(), command.aliases().toArray(String[]::new))
                 .permission(command.permission()).commandDescription(Description.of(command.description()))
                 .required("player", stringParser(), playerSuggestions())
-                .handler(context -> mutateResolved(sender(context.sender()), context.get("player"), BigDecimal.ZERO, Mutation.SET)));
+                .handler(context -> mutateResolved(sender(context.sender()), context.get("player"), BigDecimal.ZERO, Mutation.RESET)));
     }
 
     private void registerHistory(Command.Builder<CommandSourceStack> base, ConfigSnapshot.Command command) {
@@ -199,7 +206,7 @@ public final class PointsCommandController {
             if (failure != null) {
                 this.feedback.send(sender, "service-unavailable", Map.of());
             } else {
-                this.feedback.send(sender, "balance", Map.of("amount", this.points.formatAmount(snapshot.balance())));
+                sendBalance(sender, "balance", snapshot.balance(), Map.of());
             }
         }));
     }
@@ -219,8 +226,8 @@ public final class PointsCommandController {
                             if (identityFailure != null) {
                                 this.feedback.send(sender, "service-unavailable", Map.of());
                             } else {
-                                this.feedback.send(sender, "balance-other", Map.of(
-                                        "player", identity, "amount", this.points.formatAmount(value.getValue().balance())));
+                                sendBalance(sender, "balance-other", value.getValue().balance(),
+                                        Map.of("player", identity));
                             }
                         }));
                     }
@@ -234,6 +241,18 @@ public final class PointsCommandController {
             return;
         }
         mutateResolved(sender, name, success.amount(), mutation);
+    }
+
+    private void sendBalance(CommandSender sender, String key, BigDecimal balance,
+                             Map<String, Component> additionalValues) {
+        String compact = this.points.formatAmountPlain(balance, AmountDisplayMode.COMPACT);
+        String grouped = this.points.formatAmountPlain(balance, AmountDisplayMode.GROUPED);
+        boolean abbreviated = this.configuration.get().reloadable().amountFormat().defaultMode()
+                == ConfigSnapshot.DisplayMode.COMPACT && !compact.equals(grouped);
+        Map<String, Component> values = new HashMap<>(additionalValues);
+        values.put("amount", this.points.formatAmount(balance));
+        values.put("exact_amount", Component.text(grouped));
+        this.feedback.send(sender, abbreviated ? key + "-compact-hover" : key, Map.copyOf(values));
     }
 
     private void mutateResolved(CommandSender sender, String name, BigDecimal amount, Mutation mutation) {
@@ -252,13 +271,15 @@ public final class PointsCommandController {
             CompletableFuture<MutationResult> operation = switch (mutation) {
                 case CREDIT -> this.points.credit(new CreditRequest(target.playerId(), amount, context));
                 case DEBIT -> this.points.debit(new DebitRequest(target.playerId(), amount, context));
-                case SET -> this.points.setBalance(new SetBalanceRequest(target.playerId(), amount, context));
+                case SET, RESET -> this.points.setBalance(new SetBalanceRequest(target.playerId(), amount, context));
             };
-            operation.whenComplete((result, operationFailure) -> main(() -> mutationResult(sender, target, result, operationFailure)));
+            operation.whenComplete((result, operationFailure) ->
+                    main(() -> mutationResult(sender, target, mutation, result, operationFailure)));
         });
     }
 
-    private void mutationResult(CommandSender sender, AccountRecord target, MutationResult result, Throwable failure) {
+    private void mutationResult(CommandSender sender, AccountRecord target, Mutation mutation,
+                                MutationResult result, Throwable failure) {
         if (failure != null) {
             this.feedback.send(sender, "service-unavailable", Map.of());
             return;
@@ -266,6 +287,14 @@ public final class PointsCommandController {
         if (!result.success()) {
             this.feedback.send(sender, "mutation-" + result.status().name().toLowerCase().replace('_', '-'), Map.of());
             return;
+        }
+        BigDecimal amount = result.finalAmount().orElseThrow();
+        BigDecimal balance = result.after().orElseThrow().balance();
+        if (!result.replayed()) {
+            this.administrativeNotifications.publish(new AdministrativeNotification(
+                    result.operationId(), this.configuration.get().restartRequired().serverId(), mutation.notificationOperation(),
+                    sender instanceof Player player ? Optional.of(player.getUniqueId()) : Optional.empty(),
+                    sender instanceof Player player ? player.getName() : "Console", target.playerId(), amount, balance));
         }
         identity(target).whenComplete((identity, identityFailure) -> main(() -> {
             Component renderedIdentity = identity;
@@ -275,10 +304,10 @@ public final class PointsCommandController {
                         identityFailure);
                 renderedIdentity = Component.text(target.lastKnownName());
             }
-            this.feedback.send(sender, "mutation-success", Map.of(
+            this.feedback.send(sender, "mutation-" + mutation.messageKey() + "-executed", Map.of(
                     "player", renderedIdentity,
-                    "amount", this.points.formatAmount(result.finalAmount().orElseThrow()),
-                    "balance", this.points.formatAmount(result.after().orElseThrow().balance())));
+                    "amount", this.points.formatAmount(amount),
+                    "balance", this.points.formatAmount(balance)));
         }));
     }
 
@@ -353,12 +382,27 @@ public final class PointsCommandController {
     }
 
     private void registerExceptions() {
-        this.manager.exceptionController().registerHandler(NoPermissionException.class,
-                context -> this.feedback.send(sender(context.context().sender()), "no-permission", Map.of()));
-        this.manager.exceptionController().registerHandler(InvalidSyntaxException.class,
-                context -> this.feedback.send(sender(context.context().sender()), "invalid-command", Map.of()));
-        this.manager.exceptionController().registerHandler(ArgumentParseException.class,
-                context -> this.feedback.send(sender(context.context().sender()), "invalid-command", Map.of()));
+        MinecraftExceptionHandler.<CommandSourceStack>create(source -> source.getSender())
+                .handler(NoPermissionException.class, (formatter, context) -> {
+                    this.feedback.send(sender(context.context().sender()), "no-permission", Map.of());
+                    return null;
+                })
+                .handler(InvalidSyntaxException.class, (formatter, context) -> {
+                    this.feedback.send(sender(context.context().sender()), "invalid-command", Map.of());
+                    return null;
+                })
+                .handler(ArgumentParseException.class, (formatter, context) -> {
+                    this.feedback.send(sender(context.context().sender()), "invalid-command", Map.of());
+                    return null;
+                })
+                .handler(CommandExecutionException.class, (formatter, context) -> {
+                    this.plugin.getComponentLogger().error(
+                            "Unhandled exception while executing a NetworkPoints command.",
+                            context.exception().getCause());
+                    this.feedback.send(sender(context.context().sender()), "service-unavailable", Map.of());
+                    return null;
+                })
+                .registerTo(this.manager);
     }
 
     private void main(Runnable action) {
@@ -370,7 +414,26 @@ public final class PointsCommandController {
     }
 
     private enum Mutation {
-        CREDIT, DEBIT, SET
+        CREDIT("give", AdministrativeNotification.Operation.GIVE),
+        DEBIT("take", AdministrativeNotification.Operation.TAKE),
+        SET("set", AdministrativeNotification.Operation.SET),
+        RESET("reset", AdministrativeNotification.Operation.RESET);
+
+        private final String messageKey;
+        private final AdministrativeNotification.Operation notificationOperation;
+
+        Mutation(String messageKey, AdministrativeNotification.Operation notificationOperation) {
+            this.messageKey = messageKey;
+            this.notificationOperation = notificationOperation;
+        }
+
+        private String messageKey() {
+            return this.messageKey;
+        }
+
+        private AdministrativeNotification.Operation notificationOperation() {
+            return this.notificationOperation;
+        }
     }
 
     @FunctionalInterface

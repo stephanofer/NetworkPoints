@@ -27,7 +27,7 @@ import java.util.regex.Pattern;
 final class ConfigLoader {
     private static final int CONFIG_FILE_VERSION = 2;
     private static final int COMMAND_FILE_VERSION = 1;
-    private static final int MESSAGE_FILE_VERSION = 1;
+    private static final int MESSAGE_FILE_VERSION = 4;
     private static final BigDecimal DECIMAL_30_2_MAX = new BigDecimal("9999999999999999999999999999.99");
     private static final Pattern COMPONENT_ID = Pattern.compile("[a-z0-9][a-z0-9._-]{0,63}");
     private static final Pattern COMMAND_NAME = Pattern.compile("[a-z0-9][a-z0-9_-]{0,31}");

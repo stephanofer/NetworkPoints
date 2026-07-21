@@ -17,7 +17,9 @@ dependencies {
     implementation(libs.craftkit.redis)
     implementation(libs.boosted.yaml)
     implementation(libs.caffeine)
+    implementation(platform(libs.cloud.minecraft.bom))
     implementation(libs.cloud.paper)
+    implementation(libs.cloud.minecraft.extras)
 
     testImplementation(project(":networkpoints-api"))
     testImplementation(libs.paper.api)
@@ -70,6 +72,8 @@ tasks.shadowJar {
     relocate("org.reactivestreams", "com.stephanofer.networkpoints.libs.reactiveStreams")
     relocate("org.incendo.cloud", "com.stephanofer.networkpoints.libs.cloud")
     relocate("io.leangen.geantyref", "com.stephanofer.networkpoints.libs.geantyref")
+    relocate("xyz.jpenilla.reflectionremapper", "com.stephanofer.networkpoints.libs.reflectionremapper")
+    relocate("net.fabricmc.mappingio", "com.stephanofer.networkpoints.libs.mappingio")
 
     dependencies {
         exclude(dependency("org.slf4j:slf4j-api:.*"))
@@ -98,6 +102,7 @@ val verifyShadowJar = tasks.register("verifyShadowJar") {
                 "com/stephanofer/networkpoints/libs/errorprone/annotations/CanIgnoreReturnValue.class",
                 "com/stephanofer/networkpoints/libs/craftkit/redis/RedisClient.class",
                 "com/stephanofer/networkpoints/libs/cloud/paper/PaperCommandManager.class",
+                "com/stephanofer/networkpoints/libs/cloud/minecraft/extras/MinecraftExceptionHandler.class",
                 "com/stephanofer/networkpoints/libs/geantyref/GenericTypeReflector.class",
                 "db/migration/V1__create_networkpoints.sql",
                 "db/migration/V2__create_networkpoints_operations.sql"
@@ -133,7 +138,9 @@ val verifyShadowJar = tasks.register("verifyShadowJar") {
                 "com/google/errorprone/annotations/",
                 "org/slf4j/",
                 "org/incendo/cloud/",
-                "io/leangen/geantyref/"
+                "io/leangen/geantyref/",
+                "xyz/jpenilla/reflectionremapper/",
+                "net/fabricmc/mappingio/"
             )
             check(entries.none { entry -> forbidden.any(entry::startsWith) }) {
                 "Shadow JAR contains unrelocated or externally provided dependencies"

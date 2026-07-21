@@ -99,15 +99,41 @@ public final class PaymentController implements AutoCloseable {
             reject(sender, decision.status(), reloadable.payments());
             return;
         }
-        if (!this.cooldowns.tryAcquire(sender.getUniqueId(), reloadable.payments().cooldownMillis())) {
-            this.feedback.send(sender, "pay-cooldown", Map.of());
-            return;
-        }
         if (!decision.requiresConfirmation()) {
-            execute(sender, recipient, amount, UUID.randomUUID());
+            if (acquireCooldown(sender, reloadable.payments())) {
+                execute(sender, recipient, amount, UUID.randomUUID());
+            }
             return;
         }
-        showConfirmation(sender, recipient, amount, reloadable);
+        prevalidateConfirmation(sender, recipient, amount, reloadable);
+    }
+
+    private void prevalidateConfirmation(Player sender, AccountRecord recipient, BigDecimal amount,
+                                         ConfigSnapshot.Reloadable reloadable) {
+        this.points.refreshBalance(sender.getUniqueId()).whenComplete((balance, failure) -> main(() -> {
+            if (!sender.isOnline() || !this.open.get()) {
+                return;
+            }
+            if (failure != null) {
+                this.feedback.send(sender, "service-unavailable", Map.of());
+                return;
+            }
+            if (!this.policy.hasSufficientFunds(balance.balance(), amount)) {
+                this.feedback.send(sender, "pay-insufficient-funds", Map.of());
+                return;
+            }
+            if (acquireCooldown(sender, reloadable.payments())) {
+                showConfirmation(sender, recipient, amount, reloadable);
+            }
+        }));
+    }
+
+    private boolean acquireCooldown(Player sender, ConfigSnapshot.Payments config) {
+        if (this.cooldowns.tryAcquire(sender.getUniqueId(), config.cooldownMillis())) {
+            return true;
+        }
+        this.feedback.send(sender, "pay-cooldown", Map.of());
+        return false;
     }
 
     private void showConfirmation(Player sender, AccountRecord recipient, BigDecimal amount,

@@ -33,6 +33,15 @@ public final class PaymentPolicy {
         return new Decision(Status.ACCEPTED, confirmation);
     }
 
+    public boolean hasSufficientFunds(BigDecimal balance, BigDecimal amount) {
+        Objects.requireNonNull(balance, "balance");
+        Objects.requireNonNull(amount, "amount");
+        if (balance.signum() < 0 || amount.signum() <= 0) {
+            throw new IllegalArgumentException("balance must be non-negative and amount must be positive");
+        }
+        return balance.compareTo(amount) >= 0;
+    }
+
     public enum Status {
         ACCEPTED,
         DISABLED,

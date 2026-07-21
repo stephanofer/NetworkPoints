@@ -2,7 +2,6 @@ name: NetworkPoints
 version: '${version}'
 
 main: com.stephanofer.networkpoints.NetworkPointsPlugin
-bootstrapper: com.stephanofer.networkpoints.NetworkPointsBootstrap
 loader: com.stephanofer.networkpoints.NetworkPointsLoader
 api-version: '26.1'
 load: POSTWORLD

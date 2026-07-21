@@ -19,6 +19,7 @@ import com.stephanofer.networkpoints.award.NeutralAwardCalculator;
 import com.stephanofer.networkpoints.config.ConfigSnapshot;
 import com.stephanofer.networkpoints.config.NetworkPointsConfig;
 import com.stephanofer.networkpoints.command.PointsCommandController;
+import com.stephanofer.networkpoints.command.AdministrativeNotifications;
 import com.stephanofer.networkpoints.feedback.FeedbackAction;
 import com.stephanofer.networkpoints.feedback.FeedbackCompiler;
 import com.stephanofer.networkpoints.feedback.FeedbackService;
@@ -70,7 +71,7 @@ public final class NetworkPointsLifecycle implements Listener {
 
     private final JavaPlugin plugin;
     private final NetworkPointsConfig configuration;
-    private final PaperCommandManager.Bootstrapped<CommandSourceStack> commandManager;
+    private final PaperCommandManager<CommandSourceStack> commandManager;
     private final AtomicReference<LifecycleState> state = new AtomicReference<>(LifecycleState.NEW);
     private final AtomicBoolean reloadInProgress = new AtomicBoolean();
     private final PlayerPreloadGuard preloads = new PlayerPreloadGuard();
@@ -88,8 +89,9 @@ public final class NetworkPointsLifecycle implements Listener {
     private NetworkPointsExpansion expansion;
     private PaymentController payments;
     private PaymentNotifications paymentNotifications;
+    private AdministrativeNotifications administrativeNotifications;
 
-    public NetworkPointsLifecycle(JavaPlugin plugin, PaperCommandManager.Bootstrapped<CommandSourceStack> commandManager) {
+    public NetworkPointsLifecycle(JavaPlugin plugin, PaperCommandManager<CommandSourceStack> commandManager) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.commandManager = Objects.requireNonNull(commandManager, "commandManager");
         this.configuration = new NetworkPointsConfig(plugin.getDataPath());
@@ -281,13 +283,17 @@ public final class NetworkPointsLifecycle implements Listener {
                 this.plugin, this.redis, snapshot.restartRequired().serverId(), this.service, this.identities,
                 this.feedback, failure -> this.plugin.getComponentLogger().warn(
                         "NetworkPoints payment notification failed.", failure));
+        this.administrativeNotifications = new AdministrativeNotifications(
+                this.plugin, this.redis, snapshot.restartRequired().serverId(), this.service, this.identities,
+                this.feedback, failure -> this.plugin.getComponentLogger().warn(
+                        "NetworkPoints administrative notification failed.", failure));
         this.payments = new PaymentController(
                 this.plugin, this.service, this.accountStore, this.identities, this.feedback,
                 this.configuration::snapshot, this.paymentNotifications);
         new PointsCommandController(
                 this.plugin, this.commandManager, this.service, this.accountStore, this.auditStore, this.identities,
                 this.feedback, this.configuration::snapshot, this::state, this::redisState, this::reload,
-                this.payments).register();
+                this.payments, this.administrativeNotifications).register();
         ConfigSnapshot.Integrations integrations = snapshot.restartRequired().integrations();
         if (integrations.placeholderApi() && this.plugin.getServer().getPluginManager().isPluginEnabled("PlaceholderAPI")) {
             this.expansion = new NetworkPointsExpansion(this.plugin,
@@ -461,6 +467,11 @@ public final class NetworkPointsLifecycle implements Listener {
         PaymentController currentPayments = this.payments;
         this.payments = null;
         if (currentPayments != null) shutdownStep("payments shutdown", currentPayments::close);
+        AdministrativeNotifications currentAdministrativeNotifications = this.administrativeNotifications;
+        this.administrativeNotifications = null;
+        if (currentAdministrativeNotifications != null) {
+            shutdownStep("administrative notification shutdown", currentAdministrativeNotifications::close);
+        }
         PaymentNotifications currentNotifications = this.paymentNotifications;
         this.paymentNotifications = null;
         if (currentNotifications != null) shutdownStep("payment notification shutdown", currentNotifications::close);

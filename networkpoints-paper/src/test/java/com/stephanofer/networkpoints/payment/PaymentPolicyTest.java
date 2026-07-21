@@ -2,6 +2,7 @@ package com.stephanofer.networkpoints.payment;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.stephanofer.networkpoints.config.ConfigSnapshot;
@@ -11,6 +12,15 @@ import org.junit.jupiter.api.Test;
 
 class PaymentPolicyTest {
     private final PaymentPolicy policy = new PaymentPolicy();
+
+    @Test
+    void requiresTheFullAmountBeforeOpeningConfirmation() {
+        assertTrue(this.policy.hasSufficientFunds(new BigDecimal("100.00"), new BigDecimal("100.00")));
+        assertFalse(this.policy.hasSufficientFunds(new BigDecimal("99.99"), new BigDecimal("100.00")));
+        assertThrows(IllegalArgumentException.class,
+                () -> this.policy.hasSufficientFunds(BigDecimal.ZERO, BigDecimal.ZERO));
+    }
+
     private final UUID sender = UUID.randomUUID();
     private final UUID recipient = UUID.randomUUID();
 
