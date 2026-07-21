@@ -55,6 +55,16 @@ class NetworkPointsConfigTest {
     }
 
     @Test
+    void acceptsHyphensInDatabaseName() throws Exception {
+        new NetworkPointsConfig(directory).start();
+        replace(directory.resolve("config.yml"), "name: networkpoints", "name: proxy-minecraft");
+
+        ConfigSnapshot snapshot = new NetworkPointsConfig(directory).start();
+
+        assertEquals("proxy-minecraft", snapshot.restartRequired().database().name());
+    }
+
+    @Test
     void rejectsDuplicateKeys() throws Exception {
         new NetworkPointsConfig(directory).start();
         Path commands = directory.resolve("commands.yml");

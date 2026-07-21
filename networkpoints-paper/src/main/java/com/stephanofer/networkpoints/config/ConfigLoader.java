@@ -144,7 +144,7 @@ final class ConfigLoader {
         Long shutdownTimeout = r.longValue("database.executor.shutdown-timeout-millis");
         r.notBlank(host, "database.host");
         r.require(port != null && port >= 1 && port <= 65535, "database.port", "must be between 1 and 65535");
-        r.require(name != null && name.matches("[A-Za-z0-9_]+"), "database.name", "must be a valid database identifier");
+        r.require(name != null && name.matches("[A-Za-z0-9_-]+"), "database.name", "must be a valid database identifier");
         r.notBlank(username, "database.username");
         r.require(password != null, "database.password", "is required");
         r.positive(maximumPoolSize, "database.pool.maximum-size");
