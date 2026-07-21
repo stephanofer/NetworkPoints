@@ -73,6 +73,8 @@ final class ConfigLoader {
         ConfigSnapshot.Commands commandConfig = readCommands(cmd);
         ConfigSnapshot.Messages es = readMessages("messages/es.yml", spanish, errors);
         ConfigSnapshot.Messages en = readMessages("messages/en.yml", english, errors);
+        ConfigSnapshot.PaymentDialogText esPaymentDialog = readPaymentDialog("messages/es.yml", spanish, errors);
+        ConfigSnapshot.PaymentDialogText enPaymentDialog = readPaymentDialog("messages/en.yml", english, errors);
 
         c.require(serverId != null && COMPONENT_ID.matcher(serverId).matches(), "server-id", "must be a lowercase component ID (maximum 64 characters)");
         validateCrossSection(c, monetaryPolicy, amountInput, amountFormat, payments, cache, audit, identity);
@@ -83,7 +85,8 @@ final class ConfigLoader {
         return new ConfigSnapshot(
                 new ConfigSnapshot.RestartRequired(serverId, database, redis, commandConfig, integrations, monetaryPolicy),
                 new ConfigSnapshot.Reloadable(currency, amountInput, amountFormat, payments, cache, audit, identity,
-                        placeholder, Map.of("es", es, "en", en)),
+                        placeholder, Map.of("es", es, "en", en),
+                        Map.of("es", esPaymentDialog, "en", enPaymentDialog)),
                 List.of()
         );
     }
@@ -382,6 +385,9 @@ final class ConfigLoader {
             if (key.equals("config-version")) {
                 continue;
             }
+            if (key.equals("payment-dialog")) {
+                continue;
+            }
             if (!COMPONENT_ID.matcher(key).matches()) {
                 r.error(key, "must be a valid message ID");
                 continue;
@@ -403,6 +409,30 @@ final class ConfigLoader {
         }
         r.require(!messages.isEmpty(), "<root>", "must contain at least one message");
         return new ConfigSnapshot.Messages(messages);
+    }
+
+    private static ConfigSnapshot.PaymentDialogText readPaymentDialog(
+            String file, YamlDocument document, List<String> errors) {
+        Reader r = new Reader(file, document, errors);
+        String title = r.string("payment-dialog.title");
+        String body = r.string("payment-dialog.body");
+        String confirmLabel = r.string("payment-dialog.confirm-label");
+        String confirmTooltip = r.string("payment-dialog.confirm-tooltip");
+        String cancelLabel = r.string("payment-dialog.cancel-label");
+        String cancelTooltip = r.string("payment-dialog.cancel-tooltip");
+        r.notBlank(title, "payment-dialog.title");
+        r.notBlank(body, "payment-dialog.body");
+        r.notBlank(confirmLabel, "payment-dialog.confirm-label");
+        r.notBlank(confirmTooltip, "payment-dialog.confirm-tooltip");
+        r.notBlank(cancelLabel, "payment-dialog.cancel-label");
+        r.notBlank(cancelTooltip, "payment-dialog.cancel-tooltip");
+        if (body != null) {
+            for (String placeholder : List.of("<sender>", "<recipient>", "<compact_amount>", "<exact_amount>")) {
+                r.require(body.contains(placeholder), "payment-dialog.body", "must contain " + placeholder);
+            }
+        }
+        return new ConfigSnapshot.PaymentDialogText(
+                title, body, confirmLabel, confirmTooltip, cancelLabel, cancelTooltip);
     }
 
     private static void validateCrossSection(

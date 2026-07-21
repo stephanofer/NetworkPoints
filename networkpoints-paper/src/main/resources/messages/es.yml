@@ -1,5 +1,24 @@
 config-version: 1
 
+payment-dialog:
+  title: "<gold>Confirmar pago</gold>"
+  body: |-
+    <gray>Remitente:</gray>
+    <sender>
+
+    <gray>Destinatario:</gray>
+    <recipient>
+
+    <gray>Monto:</gray>
+    <compact_amount>
+    <exact_amount>
+
+    <yellow>Verificá cuidadosamente el jugador y el monto.</yellow>
+  confirm-label: "<green>Confirmar</green>"
+  confirm-tooltip: "<gray>Confirmar y ejecutar este pago.</gray>"
+  cancel-label: "<red>Cancelar</red>"
+  cancel-tooltip: "<gray>Cancelar sin modificar ningún saldo.</gray>"
+
 balance:
   - type: "CHAT"
     message: "<gray>Tu saldo: <amount></gray>"
@@ -14,6 +33,51 @@ pay-sent:
 pay-received:
   - type: "CHAT"
     message: "<green>Recibiste <amount> de <sender>.</green>"
+pay-disabled:
+  - type: "CHAT"
+    message: "<red>Los pagos están desactivados.</red>"
+pay-self:
+  - type: "CHAT"
+    message: "<red>No podés enviarte puntos a vos mismo.</red>"
+pay-offline-recipient:
+  - type: "CHAT"
+    message: "<red>El destinatario debe estar conectado.</red>"
+pay-below-minimum:
+  - type: "CHAT"
+    message: "<red>El pago mínimo es <amount>.</red>"
+pay-above-maximum:
+  - type: "CHAT"
+    message: "<red>El pago máximo es <amount>.</red>"
+pay-cooldown:
+  - type: "CHAT"
+    message: "<red>Esperá un momento antes de realizar otro pago.</red>"
+pay-cancelled:
+  - type: "CHAT"
+    message: "<gray>Pago cancelado.</gray>"
+pay-confirmation-expired:
+  - type: "CHAT"
+    message: "<red>Esta confirmación expiró o fue reemplazada.</red>"
+pay-insufficient-funds:
+  - type: "CHAT"
+    message: "<red>No tenés suficientes puntos.</red>"
+pay-balance-limit-exceeded:
+  - type: "CHAT"
+    message: "<red>El pago superaría el saldo máximo del destinatario.</red>"
+pay-account-not-found:
+  - type: "CHAT"
+    message: "<red>La cuenta del destinatario ya no existe.</red>"
+pay-invalid-amount:
+  - type: "CHAT"
+    message: "<red>La cantidad ya no es válida.</red>"
+pay-idempotency-conflict:
+  - type: "CHAT"
+    message: "<red>El pago entra en conflicto con una operación anterior.</red>"
+pay-service-unavailable:
+  - type: "CHAT"
+    message: "<red>El servicio de puntos no está disponible.</red>"
+pay-settings-not-ready:
+  - type: "CHAT"
+    message: "<red>Tus preferencias todavía no estaban listas. Intentá el pago nuevamente.</red>"
 award-received:
   - type: "CHAT"
     message: "<green>+<amount></green> <gray>por <reason></gray>"

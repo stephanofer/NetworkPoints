@@ -47,7 +47,7 @@ class PointsPlaceholderRendererTest {
                 "#,##0.##", ',', '.', List.of());
         ConfigSnapshot.Reloadable reloadable = new ConfigSnapshot.Reloadable(currency,
                 new ConfigSnapshot.AmountInput(Map.of("k", new BigDecimal("1000"))), format,
-                null, null, null, null, new ConfigSnapshot.Placeholder("missing"), Map.of());
+                null, null, null, null, new ConfigSnapshot.Placeholder("missing"), Map.of(), Map.of());
         return new ConfigSnapshot(null, reloadable, List.of());
     }
 

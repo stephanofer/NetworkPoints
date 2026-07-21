@@ -29,6 +29,8 @@ import com.stephanofer.networkpoints.placeholder.PointsPlaceholderRenderer;
 import com.stephanofer.networkpoints.persistence.AuditStore;
 import com.stephanofer.networkpoints.persistence.DatabaseFactory;
 import com.stephanofer.networkpoints.persistence.TransactionRepository;
+import com.stephanofer.networkpoints.payment.PaymentController;
+import com.stephanofer.networkpoints.payment.PaymentNotifications;
 import com.stephanofer.networkpoints.service.DurableNetworkPointsService;
 import com.stephanofer.networkpoints.service.PaperEventDispatcher;
 import com.stephanofer.networkpoints.service.PostCommitCoordinator;
@@ -80,6 +82,8 @@ public final class NetworkPointsLifecycle implements Listener {
     private PlayerIdentityService identities;
     private FeedbackService feedback;
     private NetworkPointsExpansion expansion;
+    private PaymentController payments;
+    private PaymentNotifications paymentNotifications;
 
     public NetworkPointsLifecycle(JavaPlugin plugin, PaperCommandManager.Bootstrapped<CommandSourceStack> commandManager) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
@@ -132,6 +136,9 @@ public final class NetworkPointsLifecycle implements Listener {
                     this.service.stopAcceptingMutations();
                     this.plugin.getServer().getServicesManager().unregister(NetworkPointsService.class, this.service);
                 }
+                if (this.payments != null) {
+                    this.payments.close();
+                }
                 if (this.auditTask != null) {
                     this.auditTask.cancel();
                 }
@@ -170,6 +177,9 @@ public final class NetworkPointsLifecycle implements Listener {
         }
         if (this.identities != null) {
             this.identities.invalidate(event.getPlayer().getUniqueId());
+        }
+        if (this.payments != null) {
+            this.payments.clear(event.getPlayer().getUniqueId());
         }
     }
 
@@ -252,9 +262,17 @@ public final class NetworkPointsLifecycle implements Listener {
         this.identities = new PlayerIdentityService(
                 this.plugin, this.accountStore, styles, flags, luckPerms, snapshot.reloadable().identity(),
                 Duration.ofMinutes(snapshot.reloadable().cache().expireAfterAccessMinutes()));
+        this.paymentNotifications = new PaymentNotifications(
+                this.plugin, this.redis, snapshot.restartRequired().serverId(), this.service, this.identities,
+                this.feedback, failure -> this.plugin.getComponentLogger().warn(
+                        "NetworkPoints payment notification failed.", failure));
+        this.payments = new PaymentController(
+                this.plugin, this.service, this.accountStore, this.identities, this.feedback,
+                this.configuration::snapshot, this.paymentNotifications);
         new PointsCommandController(
                 this.plugin, this.commandManager, this.service, this.accountStore, this.auditStore, this.identities,
-                this.feedback, this.configuration::snapshot, this::state, this::redisState, this::reload).register();
+                this.feedback, this.configuration::snapshot, this::state, this::redisState, this::reload,
+                this.payments).register();
         ConfigSnapshot.Integrations integrations = snapshot.restartRequired().integrations();
         if (integrations.placeholderApi() && this.plugin.getServer().getPluginManager().isPluginEnabled("PlaceholderAPI")) {
             this.expansion = new NetworkPointsExpansion(this.plugin,
@@ -284,6 +302,7 @@ public final class NetworkPointsLifecycle implements Listener {
             ConfigSnapshot snapshot = this.configuration.reload(reloadable ->
                     catalog.set(new FeedbackCompiler().compile(reloadable.messages())));
             this.feedback.update(catalog.get());
+            this.payments.clearSessions();
             this.identities.update(snapshot.reloadable().identity());
             updatePresentation(snapshot);
             if (this.auditTask != null) {
@@ -363,6 +382,14 @@ public final class NetworkPointsLifecycle implements Listener {
         if (this.expansion != null) {
             this.expansion.unregister();
             this.expansion = null;
+        }
+        if (this.payments != null) {
+            this.payments.close();
+            this.payments = null;
+        }
+        if (this.paymentNotifications != null) {
+            this.paymentNotifications.close();
+            this.paymentNotifications = null;
         }
         if (this.feedback != null) {
             this.feedback.close();

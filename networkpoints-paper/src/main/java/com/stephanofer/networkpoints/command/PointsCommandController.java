@@ -15,6 +15,7 @@ import com.stephanofer.networkpoints.identity.PlayerIdentityService;
 import com.stephanofer.networkpoints.lifecycle.LifecycleState;
 import com.stephanofer.networkpoints.persistence.AuditStore;
 import com.stephanofer.networkpoints.persistence.TransactionRecord;
+import com.stephanofer.networkpoints.payment.PaymentController;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import java.math.BigDecimal;
 import java.time.ZoneOffset;
@@ -56,12 +57,13 @@ public final class PointsCommandController {
     private final Supplier<LifecycleState> state;
     private final Supplier<String> redisState;
     private final ReloadAction reload;
+    private final PaymentController payments;
 
     public PointsCommandController(JavaPlugin plugin, PaperCommandManager.Bootstrapped<CommandSourceStack> manager,
                                    NetworkPointsService points, AccountStore accounts, AuditStore audit,
                                    PlayerIdentityService identities, FeedbackService feedback,
-                                   Supplier<ConfigSnapshot> configuration, Supplier<LifecycleState> state,
-                                   Supplier<String> redisState, ReloadAction reload) {
+                                    Supplier<ConfigSnapshot> configuration, Supplier<LifecycleState> state,
+                                    Supplier<String> redisState, ReloadAction reload, PaymentController payments) {
         this.plugin = plugin;
         this.manager = manager;
         this.points = points;
@@ -73,6 +75,7 @@ public final class PointsCommandController {
         this.state = state;
         this.redisState = redisState;
         this.reload = reload;
+        this.payments = payments;
     }
 
     public void register() {
@@ -83,6 +86,7 @@ public final class PointsCommandController {
                 .commandDescription(Description.of(root.description()));
         this.manager.command(base.handler(context -> ownBalance(sender(context.sender()))));
         registerBalance(base, commands.entries().get("balance"));
+        registerPay(base, commands.entries().get("pay"));
         registerMutation(base, commands.entries().get("give"), Mutation.CREDIT);
         registerMutation(base, commands.entries().get("take"), Mutation.DEBIT);
         registerMutation(base, commands.entries().get("set"), Mutation.SET);
@@ -91,6 +95,25 @@ public final class PointsCommandController {
         registerReload(base, commands.entries().get("reload"));
         registerStatus(base, commands.entries().get("status"));
         registerExceptions();
+    }
+
+    private void registerPay(Command.Builder<CommandSourceStack> base, ConfigSnapshot.Command command) {
+        if (!command.enabled()) {
+            return;
+        }
+        this.manager.command(base.literal(command.name(), command.aliases().toArray(String[]::new))
+                .permission(command.permission())
+                .commandDescription(Description.of(command.description()))
+                .required("player", stringParser(), paymentSuggestions())
+                .required("amount", stringParser())
+                .handler(context -> {
+                    CommandSender sender = sender(context.sender());
+                    if (!(sender instanceof Player player)) {
+                        this.feedback.send(sender, "player-only", Map.of());
+                        return;
+                    }
+                    this.payments.start(player, context.get("player"), context.get("amount"));
+                }));
     }
 
     private void registerBalance(Command.Builder<CommandSourceStack> base, ConfigSnapshot.Command command) {
@@ -308,6 +331,16 @@ public final class PointsCommandController {
             CommandSender sender = sender(context.sender());
             return this.plugin.getServer().getOnlinePlayers().stream()
                     .filter(player -> !(sender instanceof Player viewer) || viewer.canSee(player))
+                    .map(Player::getName).toList();
+        });
+    }
+
+    private SuggestionProvider<CommandSourceStack> paymentSuggestions() {
+        return SuggestionProvider.blockingStrings((context, input) -> {
+            CommandSender sender = sender(context.sender());
+            return this.plugin.getServer().getOnlinePlayers().stream()
+                    .filter(player -> !(sender instanceof Player viewer)
+                            || (!viewer.getUniqueId().equals(player.getUniqueId()) && viewer.canSee(player)))
                     .map(Player::getName).toList();
         });
     }

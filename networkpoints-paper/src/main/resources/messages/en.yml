@@ -1,5 +1,24 @@
 config-version: 1
 
+payment-dialog:
+  title: "<gold>Confirm payment</gold>"
+  body: |-
+    <gray>Sender:</gray>
+    <sender>
+
+    <gray>Recipient:</gray>
+    <recipient>
+
+    <gray>Amount:</gray>
+    <compact_amount>
+    <exact_amount>
+
+    <yellow>Carefully verify the player and amount.</yellow>
+  confirm-label: "<green>Confirm</green>"
+  confirm-tooltip: "<gray>Confirm and execute this payment.</gray>"
+  cancel-label: "<red>Cancel</red>"
+  cancel-tooltip: "<gray>Cancel without changing any balance.</gray>"
+
 balance:
   - type: "CHAT"
     message: "<gray>Your balance: <amount></gray>"
@@ -14,6 +33,51 @@ pay-sent:
 pay-received:
   - type: "CHAT"
     message: "<green>You received <amount> from <sender>.</green>"
+pay-disabled:
+  - type: "CHAT"
+    message: "<red>Payments are disabled.</red>"
+pay-self:
+  - type: "CHAT"
+    message: "<red>You cannot send points to yourself.</red>"
+pay-offline-recipient:
+  - type: "CHAT"
+    message: "<red>The recipient must be online.</red>"
+pay-below-minimum:
+  - type: "CHAT"
+    message: "<red>The minimum payment is <amount>.</red>"
+pay-above-maximum:
+  - type: "CHAT"
+    message: "<red>The maximum payment is <amount>.</red>"
+pay-cooldown:
+  - type: "CHAT"
+    message: "<red>Wait a moment before making another payment.</red>"
+pay-cancelled:
+  - type: "CHAT"
+    message: "<gray>Payment cancelled.</gray>"
+pay-confirmation-expired:
+  - type: "CHAT"
+    message: "<red>This confirmation expired or was replaced.</red>"
+pay-insufficient-funds:
+  - type: "CHAT"
+    message: "<red>You do not have enough points.</red>"
+pay-balance-limit-exceeded:
+  - type: "CHAT"
+    message: "<red>The payment would exceed the recipient's maximum balance.</red>"
+pay-account-not-found:
+  - type: "CHAT"
+    message: "<red>The recipient's account no longer exists.</red>"
+pay-invalid-amount:
+  - type: "CHAT"
+    message: "<red>The amount is no longer valid.</red>"
+pay-idempotency-conflict:
+  - type: "CHAT"
+    message: "<red>The payment conflicts with an earlier operation.</red>"
+pay-service-unavailable:
+  - type: "CHAT"
+    message: "<red>The points service is unavailable.</red>"
+pay-settings-not-ready:
+  - type: "CHAT"
+    message: "<red>Your preferences were not ready yet. Try the payment again.</red>"
 award-received:
   - type: "CHAT"
     message: "<green>+<amount></green> <gray>for <reason></gray>"

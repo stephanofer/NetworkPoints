@@ -31,6 +31,7 @@ class NetworkPointsConfigTest {
         assertTrue(snapshot.restartRequiredChanges().isEmpty());
         assertEquals(5, snapshot.reloadable().amountFormat().compactTiers().size());
         assertTrue(snapshot.reloadable().messages().get("es").actions().containsKey("pay-sent"));
+        assertTrue(snapshot.reloadable().paymentDialogs().get("es").body().contains("<recipient>"));
         assertTrue(Files.exists(directory.resolve("config.yml")));
         assertTrue(Files.exists(directory.resolve("commands.yml")));
         assertTrue(Files.exists(directory.resolve("messages/es.yml")));

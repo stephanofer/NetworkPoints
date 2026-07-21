@@ -34,10 +34,12 @@ public record ConfigSnapshot(
             Audit audit,
             Identity identity,
             Placeholder placeholderApi,
-            Map<String, Messages> messages
+            Map<String, Messages> messages,
+            Map<String, PaymentDialogText> paymentDialogs
     ) {
         public Reloadable {
             messages = Map.copyOf(messages);
+            paymentDialogs = Map.copyOf(paymentDialogs);
         }
     }
 
@@ -217,5 +219,15 @@ public record ConfigSnapshot(
             }
             return value;
         }
+    }
+
+    public record PaymentDialogText(
+            String title,
+            String body,
+            String confirmLabel,
+            String confirmTooltip,
+            String cancelLabel,
+            String cancelTooltip
+    ) {
     }
 }

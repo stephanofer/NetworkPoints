@@ -4,6 +4,7 @@ import com.stephanofer.networkpoints.localization.LocalizedCatalog;
 import com.stephanofer.networkplayersettings.settings.api.PlayerSettingsService;
 import java.time.Duration;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -55,6 +56,14 @@ public final class FeedbackService implements AutoCloseable {
         for (FeedbackAction action : this.catalog.get().actions(language, key)) {
             dispatch(audience, action, resolver);
         }
+    }
+
+    public String resolvedLanguage(Player player) {
+        return this.settings.resolvedLanguage(Objects.requireNonNull(player, "player")).code();
+    }
+
+    public boolean isReady(Player player) {
+        return this.settings.isReady(Objects.requireNonNull(player, "player").getUniqueId());
     }
 
     public void clear(Player player) {
