@@ -1,4 +1,4 @@
-config-version: 4
+config-version: 5
 
 payment-dialog:
   title: "<gold>Confirmar pago</gold>"
@@ -168,6 +168,27 @@ history-entry:
 history-empty:
   - type: "CHAT"
     message: "<gray>No se encontraron transacciones en esta página.</gray>"
+test-award-invalid-game:
+  - type: "CHAT"
+    message: "<red>El game-id debe usar minúsculas, números, puntos, guiones o guiones bajos (máximo 64).</red>"
+test-award-failed:
+  - type: "CHAT"
+    message: "<red>Test award fallido: <status>.</red> <gray>Jugador: <player> | base: <base> | integración: <integration> | ready: <ready> | game: <game> | servidor: <server> | operación: <operation></gray>"
+test-award-header:
+  - type: "CHAT"
+    message: "<gold><bold>NetworkBoosters Award Test</bold></gold> <gray>| jugador: <player> | operación: <operation></gray>"
+test-award-context:
+  - type: "CHAT"
+    message: "<gray>Integración: <integration> | ready antes: <ready> | game: <game> | servidor: <server> | source: <source> | replay: <replayed></gray>"
+test-award-result:
+  - type: "CHAT"
+    message: "<gray>Base: <base> | multiplicador: <yellow>x<multiplier></yellow> | final: <final> | acreditado: <delta> | saldo: <before> -> <after> | boosters: <count></gray>"
+test-award-no-boosters:
+  - type: "CHAT"
+    message: "<yellow>No se aplicó ningún booster. Un multiplicador x1 es un cálculo neutral válido.</yellow>"
+test-award-booster:
+  - type: "CHAT"
+    message: "<green>Booster aplicado:</green> <gray><booster> | grupo: <group> | x<multiplier> | activación: <activation></gray>"
 status:
   - type: "CHAT"
     message: "<gold>NetworkPoints</gold> <gray>| servidor <server> | estado <state> | Redis <redis></gray>"

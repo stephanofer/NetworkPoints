@@ -6,6 +6,7 @@ import com.stephanofer.networkpoints.api.NetworkPointsService;
 import com.stephanofer.networkpoints.api.amount.AmountParseResult;
 import com.stephanofer.networkpoints.api.amount.AmountDisplayMode;
 import com.stephanofer.networkpoints.api.request.CreditRequest;
+import com.stephanofer.networkpoints.api.request.AwardRequest;
 import com.stephanofer.networkpoints.api.request.DebitRequest;
 import com.stephanofer.networkpoints.api.request.SetBalanceRequest;
 import com.stephanofer.networkpoints.api.result.MutationResult;
@@ -15,6 +16,8 @@ import com.stephanofer.networkpoints.feedback.FeedbackService;
 import com.stephanofer.networkpoints.identity.PlayerIdentityService;
 import com.stephanofer.networkpoints.lifecycle.LifecycleState;
 import com.stephanofer.networkpoints.persistence.AuditStore;
+import com.stephanofer.networkpoints.persistence.OperationRecord;
+import com.stephanofer.networkpoints.persistence.OperationStore;
 import com.stephanofer.networkpoints.persistence.TransactionRecord;
 import com.stephanofer.networkpoints.payment.PaymentController;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
@@ -33,6 +36,7 @@ import net.kyori.adventure.text.Component;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
+import com.stephanofer.networkboosters.api.NetworkBoostersService;
 import org.incendo.cloud.Command;
 import org.incendo.cloud.description.Description;
 import org.incendo.cloud.exception.ArgumentParseException;
@@ -49,6 +53,9 @@ import static org.incendo.cloud.parser.standard.StringParser.stringParser;
 public final class PointsCommandController {
     private static final DateTimeFormatter HISTORY_TIME = DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss 'UTC'")
             .withZone(ZoneOffset.UTC);
+    private static final java.util.regex.Pattern TEST_GAME_ID = java.util.regex.Pattern.compile(
+            "[a-z0-9][a-z0-9._-]{0,63}");
+    private static final String DEFAULT_TEST_GAME_ID = "networkpoints-test";
 
     private final JavaPlugin plugin;
     private final PaperCommandManager<CommandSourceStack> manager;
@@ -63,13 +70,16 @@ public final class PointsCommandController {
     private final ReloadAction reload;
     private final PaymentController payments;
     private final AdministrativeNotifications administrativeNotifications;
+    private final OperationStore operations;
+    private final NetworkBoostersService boosters;
 
     public PointsCommandController(JavaPlugin plugin, PaperCommandManager<CommandSourceStack> manager,
                                    NetworkPointsService points, AccountStore accounts, AuditStore audit,
                                    PlayerIdentityService identities, FeedbackService feedback,
                                      Supplier<ConfigSnapshot> configuration, Supplier<LifecycleState> state,
                                      Supplier<String> redisState, ReloadAction reload, PaymentController payments,
-                                     AdministrativeNotifications administrativeNotifications) {
+                                     AdministrativeNotifications administrativeNotifications,
+                                     OperationStore operations, NetworkBoostersService boosters) {
         this.plugin = plugin;
         this.manager = manager;
         this.points = points;
@@ -83,6 +93,8 @@ public final class PointsCommandController {
         this.reload = reload;
         this.payments = payments;
         this.administrativeNotifications = administrativeNotifications;
+        this.operations = operations;
+        this.boosters = boosters;
     }
 
     public void register() {
@@ -103,6 +115,7 @@ public final class PointsCommandController {
         registerMutation(base, commands.entries().get("set"), Mutation.SET);
         registerReset(base, commands.entries().get("reset"));
         registerHistory(base, commands.entries().get("history"));
+        registerTestAward(base, commands.entries().get("test-award"));
         registerReload(base, commands.entries().get("reload"));
         registerStatus(base, commands.entries().get("status"));
         registerExceptions();
@@ -184,6 +197,19 @@ public final class PointsCommandController {
                     .permission(command.permission()).commandDescription(Description.of(command.description()))
                     .handler(context -> this.reload.reload(sender(context.sender()))));
         }
+    }
+
+    private void registerTestAward(Command.Builder<CommandSourceStack> base, ConfigSnapshot.Command command) {
+        if (!command.enabled()) {
+            return;
+        }
+        this.manager.command(base.literal(command.name(), command.aliases().toArray(String[]::new))
+                .permission(command.permission()).commandDescription(Description.of(command.description()))
+                .required("player", stringParser(), playerSuggestions())
+                .required("amount", stringParser())
+                .optional("game", stringParser())
+                .handler(context -> testAward(sender(context.sender()), context.get("player"), context.get("amount"),
+                        context.<String>optional("game").orElse(DEFAULT_TEST_GAME_ID))));
     }
 
     private void registerStatus(Command.Builder<CommandSourceStack> base, ConfigSnapshot.Command command) {
@@ -326,6 +352,99 @@ public final class PointsCommandController {
                         showHistory(sender, result.orElseThrow().getKey(), result.orElseThrow().getValue(), page);
                     }
                 }));
+    }
+
+    private void testAward(CommandSender sender, String name, String input, String gameId) {
+        AmountParseResult parsed = this.points.parseAmount(input);
+        if (!(parsed instanceof AmountParseResult.Success success) || success.amount().signum() <= 0) {
+            this.feedback.send(sender, "invalid-amount", Map.of());
+            return;
+        }
+        if (!TEST_GAME_ID.matcher(gameId).matches()) {
+            this.feedback.send(sender, "test-award-invalid-game", Map.of());
+            return;
+        }
+        resolve(name).whenComplete((account, resolveFailure) -> {
+            if (resolveFailure != null) {
+                main(() -> this.feedback.send(sender, "service-unavailable", Map.of()));
+                return;
+            }
+            if (account.isEmpty()) {
+                main(() -> this.feedback.send(sender, "unknown-player", Map.of()));
+                return;
+            }
+            AccountRecord target = account.orElseThrow();
+            UUID operationId = UUID.randomUUID();
+            String serverId = this.configuration.get().restartRequired().serverId();
+            MutationContext mutationContext = new MutationContext(operationId, Key.key("networkpoints:test_consumer"),
+                    sender instanceof Player player ? Optional.of(player.getUniqueId()) : Optional.empty(),
+                    Optional.of("test-award:" + gameId));
+            AwardRequest request = new AwardRequest(target.playerId(), success.amount(), gameId, serverId, mutationContext);
+            boolean readyBefore = this.boosters != null && this.boosters.isReady(target.playerId());
+            this.points.award(request).whenComplete((result, awardFailure) -> {
+                if (awardFailure != null) {
+                    main(() -> this.feedback.send(sender, "service-unavailable", Map.of()));
+                    return;
+                }
+                if (!result.success()) {
+                    main(() -> showTestAwardFailure(sender, target, request, result.status().name(), readyBefore));
+                    return;
+                }
+                this.operations.find(operationId).whenComplete((operation, detailFailure) -> main(() -> {
+                    if (detailFailure != null || operation.isEmpty()) {
+                        this.plugin.getComponentLogger().warn(
+                                "Could not load persisted details for test award {}.", operationId, detailFailure);
+                        showTestAwardFailure(sender, target, request, "DIAGNOSTIC_READ_FAILED", readyBefore);
+                        return;
+                    }
+                    showTestAwardSuccess(sender, target, operation.orElseThrow(), readyBefore, result.replayed());
+                }));
+            });
+        });
+    }
+
+    private void showTestAwardFailure(CommandSender sender, AccountRecord target, AwardRequest request,
+                                      String status, boolean readyBefore) {
+        this.feedback.send(sender, "test-award-failed", Map.of(
+                "player", Component.text(target.lastKnownName()),
+                "status", Component.text(status),
+                "integration", Component.text(this.boosters == null ? "DISABLED" : "ENABLED"),
+                "ready", Component.text(this.boosters == null ? "NOT_APPLICABLE" : Boolean.toString(readyBefore)),
+                "base", this.points.formatAmount(request.amount()),
+                "game", Component.text(request.gameId()),
+                "server", Component.text(request.serverId()),
+                "operation", Component.text(request.context().operationId().toString())));
+    }
+
+    private void showTestAwardSuccess(CommandSender sender, AccountRecord target, OperationRecord operation,
+                                      boolean readyBefore, boolean replayed) {
+        this.feedback.send(sender, "test-award-header", Map.of(
+                "player", Component.text(target.lastKnownName()),
+                "operation", Component.text(operation.operationId().toString())));
+        this.feedback.send(sender, "test-award-context", Map.of(
+                "integration", Component.text(this.boosters == null ? "DISABLED" : "ENABLED"),
+                "ready", Component.text(this.boosters == null ? "NOT_APPLICABLE" : Boolean.toString(readyBefore)),
+                "game", Component.text(operation.awardGameId().orElseThrow()),
+                "server", Component.text(operation.awardServerId().orElseThrow()),
+                "source", Component.text(operation.context().source().asString()),
+                "replayed", Component.text(Boolean.toString(replayed))));
+        this.feedback.send(sender, "test-award-result", Map.of(
+                "base", this.points.formatAmount(operation.baseAmount()),
+                "multiplier", Component.text(operation.multiplier().stripTrailingZeros().toPlainString()),
+                "final", this.points.formatAmount(operation.finalAmount()),
+                "delta", this.points.formatAmount(operation.delta()),
+                "before", this.points.formatAmount(operation.accountBefore().balance()),
+                "after", this.points.formatAmount(operation.accountAfter().balance()),
+                "count", Component.text(operation.appliedBoosts().size())));
+        if (operation.appliedBoosts().isEmpty()) {
+            this.feedback.send(sender, "test-award-no-boosters", Map.of());
+            return;
+        }
+        operation.appliedBoosts().forEach(boost -> this.feedback.send(sender, "test-award-booster", Map.of(
+                "booster", Component.text(boost.boosterId()),
+                "group", Component.text(boost.activationGroup()),
+                "multiplier", Component.text(boost.multiplier().stripTrailingZeros().toPlainString()),
+                "activation", Component.text(boost.activationId().toString()))));
     }
 
     private void showHistory(CommandSender sender, AccountRecord account, List<TransactionRecord> records, int page) {

@@ -30,6 +30,7 @@ import com.stephanofer.networkpoints.placeholder.PointsPlaceholderRenderer;
 import com.stephanofer.networkpoints.persistence.AuditStore;
 import com.stephanofer.networkpoints.persistence.DatabaseFactory;
 import com.stephanofer.networkpoints.persistence.OperationRepository;
+import com.stephanofer.networkpoints.persistence.OperationStore;
 import com.stephanofer.networkpoints.persistence.TransactionRepository;
 import com.stephanofer.networkpoints.payment.PaymentController;
 import com.stephanofer.networkpoints.payment.PaymentNotifications;
@@ -78,6 +79,7 @@ public final class NetworkPointsLifecycle implements Listener {
     private Database database;
     private AccountStore accountStore;
     private AuditStore auditStore;
+    private OperationStore operationStore;
     private BalanceCache balanceCache;
     private DurableNetworkPointsService service;
     private RedisClient redis;
@@ -90,6 +92,7 @@ public final class NetworkPointsLifecycle implements Listener {
     private PaymentController payments;
     private PaymentNotifications paymentNotifications;
     private AdministrativeNotifications administrativeNotifications;
+    private NetworkBoostersService boosters;
 
     public NetworkPointsLifecycle(JavaPlugin plugin, PaperCommandManager<CommandSourceStack> commandManager) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
@@ -220,6 +223,7 @@ public final class NetworkPointsLifecycle implements Listener {
         TransactionRepository transactions = new TransactionRepository(this.database.table("transactions"));
         OperationRepository operations = new OperationRepository(
                 this.database.table("operations"), this.database.table("operation_boosters"));
+        this.operationStore = new OperationStore(this.database, operations);
         this.accountStore = new AccountStore(this.database, accounts);
         this.auditStore = new AuditStore(this.database, transactions, Clock.systemUTC());
         ConfigSnapshot.Cache cacheConfig = snapshot.reloadable().cache();
@@ -293,7 +297,7 @@ public final class NetworkPointsLifecycle implements Listener {
         new PointsCommandController(
                 this.plugin, this.commandManager, this.service, this.accountStore, this.auditStore, this.identities,
                 this.feedback, this.configuration::snapshot, this::state, this::redisState, this::reload,
-                this.payments, this.administrativeNotifications).register();
+                this.payments, this.administrativeNotifications, this.operationStore, this.boosters).register();
         ConfigSnapshot.Integrations integrations = snapshot.restartRequired().integrations();
         if (integrations.placeholderApi() && this.plugin.getServer().getPluginManager().isPluginEnabled("PlaceholderAPI")) {
             this.expansion = new NetworkPointsExpansion(this.plugin,
@@ -401,6 +405,7 @@ public final class NetworkPointsLifecycle implements Listener {
         if (boosters == null) {
             throw new IllegalStateException("NetworkBoosters integration is enabled but its service is unavailable");
         }
+        this.boosters = boosters;
         return new NetworkBoostersAwardCalculator(boosters);
     }
 
@@ -451,6 +456,8 @@ public final class NetworkPointsLifecycle implements Listener {
 
     private void closeRuntime() {
         this.preloads.clear();
+        this.boosters = null;
+        this.operationStore = null;
         BukkitTask currentAuditTask = this.auditTask;
         this.auditTask = null;
         if (currentAuditTask != null) shutdownStep("audit task cancellation", currentAuditTask::cancel);

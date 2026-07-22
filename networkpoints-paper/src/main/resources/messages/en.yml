@@ -1,4 +1,4 @@
-config-version: 4
+config-version: 5
 
 payment-dialog:
   title: "<gold>Confirm payment</gold>"
@@ -168,6 +168,27 @@ history-entry:
 history-empty:
   - type: "CHAT"
     message: "<gray>No transactions were found on this page.</gray>"
+test-award-invalid-game:
+  - type: "CHAT"
+    message: "<red>The game ID must use lowercase letters, numbers, dots, hyphens, or underscores (maximum 64).</red>"
+test-award-failed:
+  - type: "CHAT"
+    message: "<red>Test award failed: <status>.</red> <gray>Player: <player> | base: <base> | integration: <integration> | ready: <ready> | game: <game> | server: <server> | operation: <operation></gray>"
+test-award-header:
+  - type: "CHAT"
+    message: "<gold><bold>NetworkBoosters Award Test</bold></gold> <gray>| player: <player> | operation: <operation></gray>"
+test-award-context:
+  - type: "CHAT"
+    message: "<gray>Integration: <integration> | ready before: <ready> | game: <game> | server: <server> | source: <source> | replay: <replayed></gray>"
+test-award-result:
+  - type: "CHAT"
+    message: "<gray>Base: <base> | multiplier: <yellow>x<multiplier></yellow> | final: <final> | credited: <delta> | balance: <before> -> <after> | boosters: <count></gray>"
+test-award-no-boosters:
+  - type: "CHAT"
+    message: "<yellow>No boosters were applied. A x1 multiplier is a valid neutral calculation.</yellow>"
+test-award-booster:
+  - type: "CHAT"
+    message: "<green>Applied booster:</green> <gray><booster> | group: <group> | x<multiplier> | activation: <activation></gray>"
 status:
   - type: "CHAT"
     message: "<gold>NetworkPoints</gold> <gray>| server <server> | state <state> | Redis <redis></gray>"

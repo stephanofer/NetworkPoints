@@ -1,4 +1,4 @@
-config-version: 1
+config-version: 2
 
 root:
   name: "points"
@@ -50,6 +50,12 @@ commands:
     permission: "networkpoints.admin.history"
     enabled: true
     description: "Shows recent account transactions."
+  test-award:
+    name: "testaward"
+    aliases: ["awardtest"]
+    permission: "networkpoints.admin.test-award"
+    enabled: true
+    description: "Tests a booster-eligible points award."
   reload:
     name: "reload"
     aliases: []

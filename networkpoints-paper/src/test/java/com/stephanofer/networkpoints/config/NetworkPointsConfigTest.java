@@ -31,7 +31,11 @@ class NetworkPointsConfigTest {
         assertTrue(snapshot.restartRequiredChanges().isEmpty());
         assertEquals(5, snapshot.reloadable().amountFormat().compactTiers().size());
         assertTrue(snapshot.reloadable().messages().get("es").actions().containsKey("pay-sent"));
+        assertTrue(snapshot.reloadable().messages().get("es").actions().containsKey("test-award-result"));
         assertTrue(snapshot.reloadable().paymentDialogs().get("es").body().contains("<recipient>"));
+        ConfigSnapshot.Command testAward = snapshot.restartRequired().commands().entries().get("test-award");
+        assertEquals("testaward", testAward.name());
+        assertEquals("networkpoints.admin.test-award", testAward.permission());
         assertTrue(Files.exists(directory.resolve("config.yml")));
         assertTrue(Files.exists(directory.resolve("commands.yml")));
         assertTrue(Files.exists(directory.resolve("messages/es.yml")));
