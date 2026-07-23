@@ -12,8 +12,8 @@ import java.util.UUID;
  * Immutable result of an award, credit, debit, or balance assignment.
  *
  * <p>All optional values are present for {@link MutationStatus#SUCCESS}. A rejected result may omit
- * values that were not established. Successful results are returned only after the mutation has
- * committed.</p>
+ * values that were not established. Terminal results are returned only after the outcome has been
+ * committed. Repeating the same compatible operation ID reproduces that outcome.</p>
  *
  * @param status the business outcome
  * @param type the requested mutation type
@@ -25,7 +25,7 @@ import java.util.UUID;
  * @param baseAmount the amount before multiplier application, or empty when not established
  * @param multiplier the applied multiplier, or empty when not established
  * @param finalAmount the effective unsigned amount, or empty when not established
- * @param replayed whether this success reproduces a previously committed idempotent operation
+ * @param replayed whether this result reproduces a previously committed terminal outcome
  */
 public record MutationResult(
         MutationStatus status,
@@ -52,7 +52,7 @@ public record MutationResult(
      * @param baseAmount the amount before multiplier application, if established
      * @param multiplier the applied multiplier, if established
      * @param finalAmount the effective unsigned amount, if established
-     * @param replayed whether this success reproduces an idempotent operation
+     * @param replayed whether this result reproduces a committed terminal outcome
      */
     public MutationResult {
         Objects.requireNonNull(status, "status");
@@ -91,8 +91,8 @@ public record MutationResult(
                     baseAmount.orElseThrow(),
                     multiplier.orElseThrow(),
                     finalAmount.orElseThrow());
-        } else if (replayed) {
-            throw new IllegalArgumentException("only a successful result can be replayed");
+        } else if (replayed && !replayable(status)) {
+            throw new IllegalArgumentException("status cannot represent a persisted replay");
         }
     }
 
@@ -103,6 +103,12 @@ public record MutationResult(
      */
     public boolean success() {
         return status == MutationStatus.SUCCESS;
+    }
+
+    private static boolean replayable(MutationStatus status) {
+        return status == MutationStatus.INSUFFICIENT_FUNDS
+                || status == MutationStatus.BALANCE_LIMIT_EXCEEDED
+                || status == MutationStatus.ACCOUNT_NOT_FOUND;
     }
 
     private static Optional<BigDecimal> normalize(

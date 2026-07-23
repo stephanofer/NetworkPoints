@@ -110,13 +110,14 @@ public final class EconomicEngine {
 
     private MutationResult mutate(Connection connection, SingleCommand command) throws SQLException {
         AccountRecord account = this.accounts.lock(connection, List.of(command.playerId())).get(command.playerId());
-        if (account == null) {
-            return rejected(command, MutationStatus.ACCOUNT_NOT_FOUND, Optional.empty());
-        }
-
         Optional<OperationRecord> existing = this.operations.find(connection, command.context().operationId());
         if (existing.isPresent()) {
             return replaySingle(command, existing.orElseThrow());
+        }
+        if (account == null) {
+            this.operations.insert(connection,
+                    rejectedOperation(command, MutationStatus.ACCOUNT_NOT_FOUND, Optional.empty()));
+            return rejected(command, MutationStatus.ACCOUNT_NOT_FOUND, Optional.empty(), false);
         }
 
         EconomicDecisions.Decision decision = switch (command.type()) {
@@ -127,7 +128,9 @@ public final class EconomicEngine {
             default -> throw new IllegalStateException("Unsupported durable mutation type: " + command.type());
         };
         if (!decision.success()) {
-            return rejected(command, decision.status(), Optional.of(account.snapshot()));
+            this.operations.insert(connection,
+                    rejectedOperation(command, decision.status(), Optional.of(account.snapshot())));
+            return rejected(command, decision.status(), Optional.of(account.snapshot()), false);
         }
 
         BalanceSnapshot after = this.accounts.updateBalance(connection, account, decision.balanceAfter());
@@ -152,24 +155,27 @@ public final class EconomicEngine {
         SingleCommand command = new SingleCommand(
                 request.playerId(), request.amount(), request.context(), MutationType.AWARD, TransactionKind.AWARD);
         AccountRecord account = this.accounts.lock(connection, List.of(request.playerId())).get(request.playerId());
-        if (account == null) {
-            return rejected(command, MutationStatus.ACCOUNT_NOT_FOUND, Optional.empty());
-        }
-
         Optional<OperationRecord> existing = this.operations.find(connection, request.context().operationId());
         if (existing.isPresent()) {
             return replayAward(request, existing.orElseThrow());
         }
+        if (account == null) {
+            this.operations.insert(connection,
+                    rejectedAwardOperation(request, MutationStatus.ACCOUNT_NOT_FOUND, Optional.empty()));
+            return rejected(command, MutationStatus.ACCOUNT_NOT_FOUND, Optional.empty(), false);
+        }
 
         Optional<AwardCalculation> calculated = this.awards.calculate(request);
         if (calculated.isEmpty()) {
-            return rejected(command, MutationStatus.BOOSTER_STATE_NOT_READY, Optional.of(account.snapshot()));
+            return rejected(command, MutationStatus.BOOSTER_STATE_NOT_READY, Optional.of(account.snapshot()), false);
         }
         AwardCalculation award = calculated.orElseThrow();
         EconomicDecisions.Decision decision = EconomicDecisions.credit(
                 account.snapshot().balance(), award.finalAmount(), this.maximumBalance);
         if (!decision.success()) {
-            return rejected(command, decision.status(), Optional.of(account.snapshot()));
+            this.operations.insert(connection,
+                    rejectedAwardOperation(request, decision.status(), Optional.of(account.snapshot())));
+            return rejected(command, decision.status(), Optional.of(account.snapshot()), false);
         }
 
         BalanceSnapshot after = this.accounts.updateBalance(connection, account, decision.balanceAfter());
@@ -178,10 +184,12 @@ public final class EconomicEngine {
                 decision.delta(), award.baseAmount(), award.multiplier(), account.snapshot(), after,
                 request.context(), this.serverId));
         this.operations.insert(connection, new OperationRecord(
-                request.context().operationId(), OperationType.AWARD, request.playerId(), Optional.empty(),
+                request.context().operationId(), OperationType.AWARD, MutationStatus.SUCCESS,
+                request.playerId(), Optional.empty(),
                 request.amount(), request.context(), Optional.of(request.gameId()), Optional.of(request.serverId()),
-                account.snapshot(), after, Optional.empty(), Optional.empty(), decision.delta(), award.baseAmount(),
-                award.multiplier(), award.finalAmount(), award.appliedBoosts()));
+                Optional.of(account.snapshot()), Optional.of(after), Optional.empty(), Optional.empty(),
+                Optional.of(decision.delta()), Optional.of(award.baseAmount()), Optional.of(award.multiplier()),
+                Optional.of(award.finalAmount()), award.appliedBoosts()));
         return successfulAward(command, account.snapshot(), after, award, false);
     }
 
@@ -190,20 +198,23 @@ public final class EconomicEngine {
                 connection, List.of(request.senderId(), request.recipientId()));
         AccountRecord sender = locked.get(request.senderId());
         AccountRecord recipient = locked.get(request.recipientId());
-        if (sender == null || recipient == null) {
-            return rejectedTransfer(request, MutationStatus.ACCOUNT_NOT_FOUND);
-        }
-
         Optional<OperationRecord> existing = this.operations.find(connection, request.context().operationId());
         if (existing.isPresent()) {
             return replayTransfer(request, existing.orElseThrow());
         }
+        if (sender == null || recipient == null) {
+            this.operations.insert(connection, rejectedTransferOperation(request, MutationStatus.ACCOUNT_NOT_FOUND));
+            return rejectedTransfer(request, MutationStatus.ACCOUNT_NOT_FOUND, false);
+        }
         if (sender.snapshot().balance().compareTo(request.amount()) < 0) {
-            return rejectedTransfer(request, MutationStatus.INSUFFICIENT_FUNDS);
+            this.operations.insert(connection, rejectedTransferOperation(request, MutationStatus.INSUFFICIENT_FUNDS));
+            return rejectedTransfer(request, MutationStatus.INSUFFICIENT_FUNDS, false);
         }
         BigDecimal recipientBalance = recipient.snapshot().balance().add(request.amount());
         if (recipientBalance.compareTo(this.maximumBalance) > 0) {
-            return rejectedTransfer(request, MutationStatus.BALANCE_LIMIT_EXCEEDED);
+            this.operations.insert(connection,
+                    rejectedTransferOperation(request, MutationStatus.BALANCE_LIMIT_EXCEEDED));
+            return rejectedTransfer(request, MutationStatus.BALANCE_LIMIT_EXCEEDED, false);
         }
 
         BalanceSnapshot senderAfter = this.accounts.updateBalance(
@@ -218,11 +229,11 @@ public final class EconomicEngine {
                 TransactionKind.TRANSFER_CREDIT, request.amount(), request.amount(), DIRECT_MULTIPLIER,
                 recipient.snapshot(), recipientAfter, request.context(), this.serverId));
         this.operations.insert(connection, new OperationRecord(
-                request.context().operationId(), OperationType.TRANSFER, request.senderId(),
+                request.context().operationId(), OperationType.TRANSFER, MutationStatus.SUCCESS, request.senderId(),
                 Optional.of(request.recipientId()), request.amount(), request.context(), Optional.empty(),
-                Optional.empty(), sender.snapshot(), senderAfter, Optional.of(recipient.snapshot()),
-                Optional.of(recipientAfter), request.amount().negate(), request.amount(), DIRECT_MULTIPLIER,
-                request.amount(), List.of()));
+                Optional.empty(), Optional.of(sender.snapshot()), Optional.of(senderAfter),
+                Optional.of(recipient.snapshot()), Optional.of(recipientAfter), Optional.of(request.amount().negate()),
+                Optional.of(request.amount()), Optional.of(DIRECT_MULTIPLIER), Optional.of(request.amount()), List.of()));
         return successfulTransfer(request, sender.snapshot(), senderAfter, recipient.snapshot(), recipientAfter, false);
     }
 
@@ -255,30 +266,41 @@ public final class EconomicEngine {
 
     private static MutationResult replaySingle(SingleCommand command, OperationRecord record) {
         if (!compatible(command, record)) {
-            return rejected(command, MutationStatus.IDEMPOTENCY_CONFLICT, Optional.empty());
+            return rejected(command, MutationStatus.IDEMPOTENCY_CONFLICT, Optional.empty(), false);
         }
-        return successful(command, record.accountBefore(), record.accountAfter(), record.delta(), true);
+        if (record.outcomeStatus() != MutationStatus.SUCCESS) {
+            return rejected(command, record.outcomeStatus(), record.accountBefore(), true);
+        }
+        return successful(command, record.accountBefore().orElseThrow(), record.accountAfter().orElseThrow(),
+                record.delta().orElseThrow(), true);
     }
 
     private static MutationResult replayAward(AwardRequest request, OperationRecord record) {
         SingleCommand command = new SingleCommand(
                 request.playerId(), request.amount(), request.context(), MutationType.AWARD, TransactionKind.AWARD);
         if (!compatibleAward(request, record)) {
-            return rejected(command, MutationStatus.IDEMPOTENCY_CONFLICT, Optional.empty());
+            return rejected(command, MutationStatus.IDEMPOTENCY_CONFLICT, Optional.empty(), false);
         }
-        return successfulAward(command, record.accountBefore(), record.accountAfter(),
-                new AwardCalculation(record.baseAmount(), record.multiplier(), record.finalAmount(),
+        if (record.outcomeStatus() != MutationStatus.SUCCESS) {
+            return rejected(command, record.outcomeStatus(), record.accountBefore(), true);
+        }
+        return successfulAward(command, record.accountBefore().orElseThrow(), record.accountAfter().orElseThrow(),
+                new AwardCalculation(record.baseAmount().orElseThrow(), record.multiplier().orElseThrow(),
+                        record.finalAmount().orElseThrow(),
                         record.appliedBoosts()), true);
     }
 
     private static TransferResult replayTransfer(TransferRequest request, OperationRecord record) {
         if (!compatibleTransfer(request, record)) {
-            return rejectedTransfer(request, MutationStatus.IDEMPOTENCY_CONFLICT);
+            return rejectedTransfer(request, MutationStatus.IDEMPOTENCY_CONFLICT, false);
+        }
+        if (record.outcomeStatus() != MutationStatus.SUCCESS) {
+            return rejectedTransfer(request, record.outcomeStatus(), true);
         }
         return successfulTransfer(
                 request,
-                record.accountBefore(),
-                record.accountAfter(),
+                record.accountBefore().orElseThrow(),
+                record.accountAfter().orElseThrow(),
                 record.counterpartyBefore().orElseThrow(),
                 record.counterpartyAfter().orElseThrow(),
                 true);
@@ -303,10 +325,34 @@ public final class EconomicEngine {
     private static OperationRecord operation(
             SingleCommand command, BalanceSnapshot before, BalanceSnapshot after, BigDecimal delta) {
         BigDecimal finalAmount = command.type() == MutationType.SET_BALANCE ? after.balance() : command.amount();
-        return new OperationRecord(command.context().operationId(), operationType(command.type()), command.playerId(),
-                Optional.empty(), command.amount(), command.context(), Optional.empty(), Optional.empty(), before,
-                after, Optional.empty(), Optional.empty(), delta, command.amount(), DIRECT_MULTIPLIER, finalAmount,
-                List.of());
+        return new OperationRecord(command.context().operationId(), operationType(command.type()),
+                MutationStatus.SUCCESS, command.playerId(), Optional.empty(), command.amount(), command.context(),
+                Optional.empty(), Optional.empty(), Optional.of(before), Optional.of(after), Optional.empty(),
+                Optional.empty(), Optional.of(delta), Optional.of(command.amount()), Optional.of(DIRECT_MULTIPLIER),
+                Optional.of(finalAmount), List.of());
+    }
+
+    private static OperationRecord rejectedOperation(
+            SingleCommand command, MutationStatus status, Optional<BalanceSnapshot> before) {
+        return new OperationRecord(command.context().operationId(), operationType(command.type()), status,
+                command.playerId(), Optional.empty(), command.amount(), command.context(), Optional.empty(),
+                Optional.empty(), before, Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
+                Optional.empty(), Optional.empty(), Optional.empty(), List.of());
+    }
+
+    private static OperationRecord rejectedAwardOperation(
+            AwardRequest request, MutationStatus status, Optional<BalanceSnapshot> before) {
+        return new OperationRecord(request.context().operationId(), OperationType.AWARD, status, request.playerId(),
+                Optional.empty(), request.amount(), request.context(), Optional.of(request.gameId()),
+                Optional.of(request.serverId()), before, Optional.empty(), Optional.empty(), Optional.empty(),
+                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), List.of());
+    }
+
+    private static OperationRecord rejectedTransferOperation(TransferRequest request, MutationStatus status) {
+        return new OperationRecord(request.context().operationId(), OperationType.TRANSFER, status,
+                request.senderId(), Optional.of(request.recipientId()), request.amount(), request.context(),
+                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
+                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), List.of());
     }
 
     private static OperationType operationType(MutationType type) {
@@ -343,9 +389,9 @@ public final class EconomicEngine {
     }
 
     private static MutationResult rejected(
-            SingleCommand command, MutationStatus status, Optional<BalanceSnapshot> before) {
+            SingleCommand command, MutationStatus status, Optional<BalanceSnapshot> before, boolean replayed) {
         return new MutationResult(status, command.type(), command.context().operationId(), command.playerId(),
-                before, Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), false);
+                before, Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), replayed);
     }
 
     private static TransferResult successfulTransfer(
@@ -373,10 +419,11 @@ public final class EconomicEngine {
                 replayed);
     }
 
-    private static TransferResult rejectedTransfer(TransferRequest request, MutationStatus status) {
+    private static TransferResult rejectedTransfer(
+            TransferRequest request, MutationStatus status, boolean replayed) {
         return new TransferResult(status, request.context().operationId(), request.senderId(), request.recipientId(),
                 Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
-                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), false);
+                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), replayed);
     }
 
     private record SingleCommand(

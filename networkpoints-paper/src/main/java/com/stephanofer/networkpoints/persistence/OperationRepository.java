@@ -1,6 +1,7 @@
 package com.stephanofer.networkpoints.persistence;
 
 import com.stephanofer.networkpoints.api.balance.BalanceSnapshot;
+import com.stephanofer.networkpoints.api.result.MutationStatus;
 import com.stephanofer.networkpoints.api.source.MutationContext;
 import com.stephanofer.networkpoints.award.AppliedAwardBoost;
 import java.sql.Connection;
@@ -38,32 +39,31 @@ public final class OperationRepository {
 
     public void insert(Connection connection, OperationRecord operation) throws SQLException {
         try (var statement = connection.prepareStatement(
-                "INSERT INTO " + this.operationsTable + " (operation_id, mutation_type, account_uuid, "
+                "INSERT INTO " + this.operationsTable + " (operation_id, mutation_type, outcome_status, account_uuid, "
                         + "counterparty_uuid, request_amount, source, actor_uuid, source_reference, award_game_id, "
                         + "award_server_id, account_balance_before, account_balance_after, account_revision_before, "
                         + "account_revision_after, counterparty_balance_before, counterparty_balance_after, "
                         + "counterparty_revision_before, counterparty_revision_after, delta, base_amount, multiplier, "
-                        + "final_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                        + "final_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             statement.setBytes(1, UuidBinary.bytes(operation.operationId()));
             statement.setString(2, operation.type().name());
-            statement.setBytes(3, UuidBinary.bytes(operation.accountId()));
-            setUuid(statement, 4, operation.counterpartyId());
-            statement.setBigDecimal(5, operation.requestAmount());
-            statement.setString(6, operation.context().source().asString());
-            setUuid(statement, 7, operation.context().actorId());
-            setString(statement, 8, operation.context().sourceReference());
-            setString(statement, 9, operation.awardGameId());
-            setString(statement, 10, operation.awardServerId());
-            statement.setBigDecimal(11, operation.accountBefore().balance());
-            statement.setBigDecimal(12, operation.accountAfter().balance());
-            statement.setLong(13, operation.accountBefore().revision());
-            statement.setLong(14, operation.accountAfter().revision());
-            setSnapshot(statement, 15, 17, operation.counterpartyBefore());
-            setSnapshot(statement, 16, 18, operation.counterpartyAfter());
-            statement.setBigDecimal(19, operation.delta());
-            statement.setBigDecimal(20, operation.baseAmount());
-            statement.setBigDecimal(21, operation.multiplier());
-            statement.setBigDecimal(22, operation.finalAmount());
+            statement.setString(3, operation.outcomeStatus().name());
+            statement.setBytes(4, UuidBinary.bytes(operation.accountId()));
+            setUuid(statement, 5, operation.counterpartyId());
+            statement.setBigDecimal(6, operation.requestAmount());
+            statement.setString(7, operation.context().source().asString());
+            setUuid(statement, 8, operation.context().actorId());
+            setString(statement, 9, operation.context().sourceReference());
+            setString(statement, 10, operation.awardGameId());
+            setString(statement, 11, operation.awardServerId());
+            setSnapshot(statement, 12, 14, operation.accountBefore());
+            setSnapshot(statement, 13, 15, operation.accountAfter());
+            setSnapshot(statement, 16, 18, operation.counterpartyBefore());
+            setSnapshot(statement, 17, 19, operation.counterpartyAfter());
+            setBigDecimal(statement, 20, operation.delta());
+            setBigDecimal(statement, 21, operation.baseAmount());
+            setBigDecimal(statement, 22, operation.multiplier());
+            setBigDecimal(statement, 23, operation.finalAmount());
             statement.executeUpdate();
         }
         insertAppliedBoosts(connection, operation);
@@ -80,20 +80,21 @@ public final class OperationRepository {
         return new OperationRecord(
                 operationId,
                 OperationType.valueOf(results.getString("mutation_type")),
+                MutationStatus.valueOf(results.getString("outcome_status")),
                 accountId,
                 counterpartyId,
                 results.getBigDecimal("request_amount"),
                 context,
                 Optional.ofNullable(results.getString("award_game_id")),
                 Optional.ofNullable(results.getString("award_server_id")),
-                snapshot(results, accountId, "account_balance_before", "account_revision_before"),
-                snapshot(results, accountId, "account_balance_after", "account_revision_after"),
+                optionalSnapshot(results, Optional.of(accountId), "account_balance_before", "account_revision_before"),
+                optionalSnapshot(results, Optional.of(accountId), "account_balance_after", "account_revision_after"),
                 optionalSnapshot(results, counterpartyId, "counterparty_balance_before", "counterparty_revision_before"),
                 optionalSnapshot(results, counterpartyId, "counterparty_balance_after", "counterparty_revision_after"),
-                results.getBigDecimal("delta"),
-                results.getBigDecimal("base_amount"),
-                results.getBigDecimal("multiplier"),
-                results.getBigDecimal("final_amount"),
+                Optional.ofNullable(results.getBigDecimal("delta")),
+                Optional.ofNullable(results.getBigDecimal("base_amount")),
+                Optional.ofNullable(results.getBigDecimal("multiplier")),
+                Optional.ofNullable(results.getBigDecimal("final_amount")),
                 appliedBoosts);
     }
 
@@ -138,11 +139,6 @@ public final class OperationRepository {
         }
     }
 
-    private static BalanceSnapshot snapshot(ResultSet results, UUID playerId, String balance, String revision)
-            throws SQLException {
-        return new BalanceSnapshot(playerId, results.getBigDecimal(balance), results.getLong(revision));
-    }
-
     private static Optional<BalanceSnapshot> optionalSnapshot(
             ResultSet results, Optional<UUID> playerId, String balance, String revision) throws SQLException {
         var value = results.getBigDecimal(balance);
@@ -158,6 +154,15 @@ public final class OperationRepository {
         } else {
             statement.setNull(balanceIndex, Types.DECIMAL);
             statement.setNull(revisionIndex, Types.BIGINT);
+        }
+    }
+
+    private static void setBigDecimal(
+            java.sql.PreparedStatement statement, int index, Optional<java.math.BigDecimal> value) throws SQLException {
+        if (value.isPresent()) {
+            statement.setBigDecimal(index, value.orElseThrow());
+        } else {
+            statement.setNull(index, Types.DECIMAL);
         }
     }
 

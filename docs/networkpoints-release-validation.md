@@ -50,7 +50,7 @@ Usar cuentas desechables y conservar consultas SQL antes y después de cada esce
 | DB-01 | Migración sobre schema vacío | Se crean cuentas, transacciones y registro técnico de operaciones | [ ] |
 | DB-02 | Credit, debit y set | Saldo, revisión, historial y operación confirman juntos | [ ] |
 | DB-03 | Transferencia | Ambas cuentas y dos entradas confirman en una transacción | [ ] |
-| DB-04 | Fondos insuficientes | No cambia saldo, revisión, historial ni operación confirmada | [ ] |
+| DB-04 | Fondos insuficientes | No cambia saldo, revisión ni historial; persiste el rechazo terminal | [ ] |
 | DB-05 | Máximo de saldo | El límite exacto confirma; excederlo no modifica datos | [ ] |
 | DB-06 | Dos débitos concurrentes | Solo confirman los que el saldo autoritativo permite | [ ] |
 | DB-07 | Pago y compra simultáneos | No hay saldo negativo ni aceptación basada en caché | [ ] |
@@ -62,6 +62,10 @@ Usar cuentas desechables y conservar consultas SQL antes y después de cada esce
 | DB-13 | Replay después de cleanup | El registro técnico impide ejecutar nuevamente la operación | [ ] |
 | DB-14 | MySQL desconectado | Future/comando falla sin cambiar caché ni comunicar éxito | [ ] |
 | DB-15 | Reinicio con operación activa | Commit completo o rollback; nunca estado parcial | [ ] |
+| DB-16 | Retry de fondos insuficientes después de acreditar saldo | Devuelve el rechazo original sin débito tardío | [ ] |
+| DB-17 | Retry de cuenta inexistente después de crearla | Devuelve `ACCOUNT_NOT_FOUND` reproducido | [ ] |
+| DB-18 | Estado transitorio y retry compatible | No reclama el ID y vuelve a evaluar la solicitud | [ ] |
+| DB-19 | Dos solicitudes concurrentes incompatibles con el mismo ID | Una decisión terminal y un `IDEMPOTENCY_CONFLICT` | [ ] |
 
 Consultas mínimas de evidencia:
 
@@ -70,7 +74,7 @@ SELECT player_uuid, balance, revision FROM networkpoints_accounts;
 SELECT operation_id, entry_index, account_uuid, transaction_type, delta,
        balance_before, balance_after, revision_before, revision_after
 FROM networkpoints_transactions ORDER BY id;
-SELECT operation_id, mutation_type, account_uuid, counterparty_uuid,
+SELECT operation_id, mutation_type, outcome_status, account_uuid, counterparty_uuid,
        request_amount, account_revision_before, account_revision_after
 FROM networkpoints_operations ORDER BY created_at;
 SELECT operation_id, entry_index, activation_id, booster_id, activation_group, multiplier

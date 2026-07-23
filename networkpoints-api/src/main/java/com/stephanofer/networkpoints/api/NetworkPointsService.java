@@ -23,7 +23,9 @@ import net.kyori.adventure.text.Component;
  * {@link #formatAmountPlain(BigDecimal, AmountDisplayMode)}, and {@link #parseAmount(String)} are
  * synchronous, thread-safe, and perform no I/O. Every method returning a future is asynchronous.
  * Future callbacks have no main-thread guarantee, and infrastructure failures complete those
- * futures exceptionally.</p>
+ * futures exceptionally. A normally completed terminal mutation result is durable: repeating the
+ * same request and operation ID reproduces the original success or rejection. Retryable statuses
+ * do not claim the operation ID.</p>
  */
 public interface NetworkPointsService {
     /**

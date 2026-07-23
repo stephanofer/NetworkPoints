@@ -31,6 +31,14 @@ class ResultContractsTest {
                         MutationType.DEBIT,
                         MutationType.SET_BALANCE),
                 EnumSet.allOf(MutationType.class));
+        assertTrue(MutationStatus.SUCCESS.terminal());
+        assertTrue(MutationStatus.INSUFFICIENT_FUNDS.terminal());
+        assertTrue(MutationStatus.BALANCE_LIMIT_EXCEEDED.terminal());
+        assertTrue(MutationStatus.ACCOUNT_NOT_FOUND.terminal());
+        assertTrue(MutationStatus.INVALID_AMOUNT.terminal());
+        assertTrue(MutationStatus.IDEMPOTENCY_CONFLICT.terminal());
+        assertFalse(MutationStatus.BOOSTER_STATE_NOT_READY.terminal());
+        assertFalse(MutationStatus.SERVICE_UNAVAILABLE.terminal());
     }
 
     @Test
@@ -69,9 +77,9 @@ class ResultContractsTest {
     }
 
     @Test
-    void failedMutationCannotClaimIdempotentReplay() {
+    void onlyPersistableTerminalRejectionsCanClaimIdempotentReplay() {
         MutationResult result = new MutationResult(
-                MutationStatus.ACCOUNT_NOT_FOUND,
+                MutationStatus.INSUFFICIENT_FUNDS,
                 MutationType.AWARD,
                 UUID.randomUUID(),
                 UUID.randomUUID(),
@@ -81,11 +89,24 @@ class ResultContractsTest {
                 Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),
-                false);
+                true);
 
         assertFalse(result.success());
+        assertTrue(result.replayed());
         assertThrows(IllegalArgumentException.class, () -> new MutationResult(
                 MutationStatus.SERVICE_UNAVAILABLE,
+                MutationType.AWARD,
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty(),
+                true));
+        assertThrows(IllegalArgumentException.class, () -> new MutationResult(
+                MutationStatus.IDEMPOTENCY_CONFLICT,
                 MutationType.AWARD,
                 UUID.randomUUID(),
                 UUID.randomUUID(),
@@ -243,6 +264,20 @@ class ResultContractsTest {
                 Optional.of(BigDecimal.ONE),
                 Optional.of(new BigDecimal("5")),
                 false));
+    }
+
+    @Test
+    void terminalTransferRejectionCanBeReplayed() {
+        TransferResult result = new TransferResult(
+                MutationStatus.ACCOUNT_NOT_FOUND,
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
+                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), true);
+
+        assertFalse(result.success());
+        assertTrue(result.replayed());
     }
 
     private static MutationResult mutation(

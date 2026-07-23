@@ -429,12 +429,12 @@ public final class PointsCommandController {
                 "source", Component.text(operation.context().source().asString()),
                 "replayed", Component.text(Boolean.toString(replayed))));
         this.feedback.send(sender, "test-award-result", Map.of(
-                "base", this.points.formatAmount(operation.baseAmount()),
-                "multiplier", Component.text(operation.multiplier().stripTrailingZeros().toPlainString()),
-                "final", this.points.formatAmount(operation.finalAmount()),
-                "delta", this.points.formatAmount(operation.delta()),
-                "before", this.points.formatAmount(operation.accountBefore().balance()),
-                "after", this.points.formatAmount(operation.accountAfter().balance()),
+                "base", this.points.formatAmount(operation.baseAmount().orElseThrow()),
+                "multiplier", Component.text(operation.multiplier().orElseThrow().stripTrailingZeros().toPlainString()),
+                "final", this.points.formatAmount(operation.finalAmount().orElseThrow()),
+                "delta", this.points.formatAmount(operation.delta().orElseThrow()),
+                "before", this.points.formatAmount(operation.accountBefore().orElseThrow().balance()),
+                "after", this.points.formatAmount(operation.accountAfter().orElseThrow().balance()),
                 "count", Component.text(operation.appliedBoosts().size())));
         if (operation.appliedBoosts().isEmpty()) {
             this.feedback.send(sender, "test-award-no-boosters", Map.of());

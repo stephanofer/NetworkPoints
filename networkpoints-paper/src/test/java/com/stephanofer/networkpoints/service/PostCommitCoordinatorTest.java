@@ -58,6 +58,27 @@ class PostCommitCoordinatorTest {
         }
     }
 
+    @Test
+    void rejectedReplayProducesNoCacheOrExternalEffects() {
+        UUID playerId = UUID.randomUUID();
+        List<String> effects = new ArrayList<>();
+        try (BalanceCache cache = cache()) {
+            PostCommitCoordinator coordinator = new PostCommitCoordinator(
+                    cache,
+                    (operationId, kind, published) -> effects.add("redis"),
+                    event -> effects.add("event"));
+            MutationResult rejection = new MutationResult(
+                    MutationStatus.INSUFFICIENT_FUNDS, MutationType.DEBIT, UUID.randomUUID(), playerId,
+                    Optional.of(snapshot(playerId, "1.00", 3)), Optional.empty(), Optional.empty(), Optional.empty(),
+                    Optional.empty(), Optional.empty(), true);
+
+            coordinator.afterMutation(rejection);
+
+            assertTrue(cache.getIfPresent(playerId).isEmpty());
+            assertTrue(effects.isEmpty());
+        }
+    }
+
     private static MutationResult result(BalanceSnapshot before, BalanceSnapshot after, boolean replayed) {
         BigDecimal amount = new BigDecimal("2.00");
         return new MutationResult(

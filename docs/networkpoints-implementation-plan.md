@@ -163,7 +163,7 @@ Implementar la fuente autoritativa de la economía y completar todas las mutacio
 - Migración Flyway inicial.
 - Tabla `networkpoints_accounts`.
 - Tabla `networkpoints_transactions` e índices aprobados.
-- Tabla técnica `networkpoints_operations` para idempotencia independiente de la retención del historial.
+- Tabla técnica `networkpoints_operations` para resultados terminales idempotentes independientes de la retención del historial.
 - Conversión JDBC de UUID mediante `BINARY(16)`.
 - Repositorio de cuentas y snapshots.
 - Creación de cuentas y saldo inicial.
@@ -176,7 +176,7 @@ Implementar la fuente autoritativa de la economía y completar todas las mutacio
 - Validación de fondos dentro de MySQL.
 - Validación de saldo máximo dentro de la transacción.
 - Revisiones monotónicas por cuenta.
-- Idempotencia mediante `operationId`.
+- Idempotencia mediante `operationId` para éxitos y rechazos terminales.
 - Detección de `IDEMPOTENCY_CONFLICT`.
 - Retry de deadlocks y lock timeouts mediante CraftKit.
 - Escritura del historial dentro de la misma transacción que el saldo.
@@ -211,7 +211,7 @@ Los repositorios deben exponer operaciones orientadas al dominio, no abstraccion
 - Debit nunca permite saldo negativo.
 - Transfer actualiza débito, crédito e historial en una sola transacción.
 - Una caída o excepción revierte toda la operación.
-- Repetir un `operationId` compatible devuelve el resultado persistido.
+- Repetir un `operationId` compatible devuelve exactamente el éxito o rechazo terminal persistido.
 - Reutilizar un `operationId` con datos diferentes devuelve conflicto.
 - Las revisiones aumentan de forma monotónica.
 - El historial representa exactamente las operaciones confirmadas.

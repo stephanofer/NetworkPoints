@@ -17,5 +17,17 @@ public enum MutationStatus {
     /** The operation ID was previously used with different request data. */
     IDEMPOTENCY_CONFLICT,
     /** The operation could not be processed because the service is unavailable. */
-    SERVICE_UNAVAILABLE
+    SERVICE_UNAVAILABLE;
+
+    /**
+     * Reports whether this outcome is final for the submitted operation.
+     *
+     * <p>Retryable outcomes do not claim the operation ID. A caller may submit the same request
+     * again after the temporary condition has cleared.</p>
+     *
+     * @return {@code true} when the caller must not reevaluate the same operation as new work
+     */
+    public boolean terminal() {
+        return this != BOOSTER_STATE_NOT_READY && this != SERVICE_UNAVAILABLE;
+    }
 }

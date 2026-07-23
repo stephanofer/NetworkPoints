@@ -12,7 +12,8 @@ import java.util.UUID;
  *
  * <p>All optional values are present for {@link MutationStatus#SUCCESS}. A rejected result may omit
  * values that were not established. Successful results are returned only after both account changes
- * have committed atomically.</p>
+ * have committed atomically. Terminal rejections are also committed so that a compatible retry
+ * reproduces the original decision.</p>
  *
  * @param status the business outcome
  * @param operationId the request's idempotency key
@@ -28,7 +29,7 @@ import java.util.UUID;
  * @param baseAmount the transfer amount before multiplier application, or empty when not established
  * @param multiplier the applied multiplier, or empty when not established
  * @param finalAmount the effective transferred amount, or empty when not established
- * @param replayed whether this success reproduces a previously committed idempotent operation
+ * @param replayed whether this result reproduces a previously committed terminal outcome
  */
 public record TransferResult(
         MutationStatus status,
@@ -63,7 +64,7 @@ public record TransferResult(
      * @param baseAmount the transfer amount before multiplier application, if established
      * @param multiplier the applied multiplier, if established
      * @param finalAmount the effective transferred amount, if established
-     * @param replayed whether this success reproduces an idempotent operation
+     * @param replayed whether this result reproduces a committed terminal outcome
      */
     public TransferResult {
         Objects.requireNonNull(status, "status");
@@ -129,8 +130,8 @@ public record TransferResult(
                     || finalAmount.orElseThrow().compareTo(transferred) != 0) {
                 throw new IllegalArgumentException("deltas and snapshots must match the transferred amount");
             }
-        } else if (replayed) {
-            throw new IllegalArgumentException("only a successful result can be replayed");
+        } else if (replayed && !replayable(status)) {
+            throw new IllegalArgumentException("status cannot represent a persisted replay");
         }
     }
 
@@ -141,6 +142,12 @@ public record TransferResult(
      */
     public boolean success() {
         return status == MutationStatus.SUCCESS;
+    }
+
+    private static boolean replayable(MutationStatus status) {
+        return status == MutationStatus.INSUFFICIENT_FUNDS
+                || status == MutationStatus.BALANCE_LIMIT_EXCEEDED
+                || status == MutationStatus.ACCOUNT_NOT_FOUND;
     }
 
     private static void requirePresent(Optional<?> value, String name) {

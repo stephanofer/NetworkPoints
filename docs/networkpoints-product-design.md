@@ -315,13 +315,15 @@ Una transferencia generará dos entradas con el mismo `operation_id`: una para e
 
 Tabla técnica: `networkpoints_operations`.
 
-El historial y la idempotencia tienen ciclos de vida diferentes. El historial se elimina según su retención, pero una operación confirmada no puede volver a ser ejecutable después de esa limpieza. Por eso, cada mutación confirmada persistirá en la misma transacción un registro técnico compacto con:
+El historial y la idempotencia tienen ciclos de vida diferentes. El historial se elimina según su retención, pero una decisión económica terminal no puede volver a evaluarse después de esa limpieza. Por eso, cada mutación con resultado terminal persistirá en la misma transacción un registro técnico compacto con:
 
 - `operation_id` como clave primaria global.
 - Identidad completa de la solicitud, incluidos `gameId` y `serverId` para `award`.
-- Snapshots y desglose necesarios para reconstruir el resultado confirmado.
+- Estado terminal, snapshots y desglose necesarios para reconstruir exactamente el resultado original.
 - Sin retención automática en la primera versión.
 - Los boosters aplicados por un `award` se normalizan en `networkpoints_operation_boosters`, ordenados por operación, para conservar activation ID, booster ID, grupo y multiplicador sin serializaciones opacas.
+
+`SUCCESS`, `INSUFFICIENT_FUNDS`, `BALANCE_LIMIT_EXCEEDED` y `ACCOUNT_NOT_FOUND` reclaman permanentemente el `operationId`. `BOOSTER_STATE_NOT_READY`, `SERVICE_UNAVAILABLE` y los fallos excepcionales son transitorios, no crean un registro y permiten reevaluar la misma solicitud. `IDEMPOTENCY_CONFLICT` se deriva del registro original y nunca lo reemplaza.
 
 Esta tabla no es historial social ni una tercera economía. No participa en consultas de jugadores ni en el hot path de lectura; existe únicamente para conservar la garantía de idempotencia durante toda la vida del dato.
 
@@ -344,7 +346,7 @@ Se utilizará `TransactionRetryPolicy.mysqlTransient()`. El callback SQL no ejec
 
 Cada mutación pública tendrá un `operationId`.
 
-Si una modalidad procesa dos veces el mismo evento o pierde la respuesta de un commit, podrá repetir la solicitud con el mismo ID. NetworkPoints devolverá el resultado persistido en lugar de duplicar la operación.
+Si una modalidad procesa dos veces el mismo evento o pierde una respuesta terminal, podrá repetir la solicitud con el mismo ID. NetworkPoints devolverá el éxito o rechazo persistido en lugar de reevaluar la operación contra un estado económico posterior.
 
 Si el mismo ID llega con información diferente, responderá `IDEMPOTENCY_CONFLICT`.
 
@@ -562,7 +564,7 @@ Un resultado exitoso incluirá:
 - Cantidad base.
 - Multiplicador.
 - Cantidad final.
-- Indicador de repetición idempotente.
+- Indicador de repetición idempotente, tanto para éxitos como para rechazos terminales.
 
 Los errores de negocio se representarán mediante resultados tipados. Los fallos de infraestructura completarán el future excepcionalmente.
 
@@ -1107,6 +1109,8 @@ Las siguientes verificaciones serán manuales:
 - Jugador pasando entre servidores.
 - Redis perdiendo una invalidación.
 - Commit confirmado cuya respuesta se pierde.
+- Rechazo terminal cuya respuesta se pierde antes de que el consumidor lo guarde.
+- Fondos acreditados después de un rechazo insuficiente que luego se reintenta.
 - Repetición del mismo evento de modalidad.
 - Doble clic en confirmar.
 - Confirmación expirada.
